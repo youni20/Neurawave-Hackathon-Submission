@@ -1,4 +1,4 @@
-# 🧠 [Project Name]
+# Neurawave Hackathon Submmision
 
 > **Event:** Neurawave Hackathon (LNU AI Society)
 > **Team:** Minimum Viable Solutions
