@@ -68,27 +68,28 @@ def optimize_hyperparameters(
             'tree_method': 'hist',
             'random_state': random_state,
             'n_jobs': -1,
-            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
-            'max_depth': trial.suggest_int('max_depth', 5, 15),
-            'min_child_weight': trial.suggest_int('min_child_weight', 1, 10),
-            'subsample': trial.suggest_float('subsample', 0.6, 1.0),
-            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
-            'reg_alpha': trial.suggest_float('reg_alpha', 0, 10),
-            'reg_lambda': trial.suggest_float('reg_lambda', 0, 10),
+            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.15, log=True),
+            'max_depth': trial.suggest_int('max_depth', 3, 7),  # Reduced from 5-15 to prevent overfitting
+            'min_child_weight': trial.suggest_int('min_child_weight', 3, 10),  # Increased from 1-10
+            'subsample': trial.suggest_float('subsample', 0.7, 0.95),  # Reduced max from 1.0
+            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.7, 0.95),  # Reduced max from 1.0
+            'reg_alpha': trial.suggest_float('reg_alpha', 1, 15),  # Increased from 0-10
+            'reg_lambda': trial.suggest_float('reg_lambda', 1, 15),  # Increased from 0-10
+            'gamma': trial.suggest_float('gamma', 0, 5),  # Add gamma for additional regularization
             'scale_pos_weight': scale_pos_weight,
         }
         
-        # Create DMatrix for XGBoost
-        dtrain = xgb.DMatrix(X_train, label=y_train)
-        dval = xgb.DMatrix(X_val, label=y_val)
+        # Create DMatrix for XGBoost with feature names
+        dtrain = xgb.DMatrix(X_train, label=y_train, feature_names=X_train.columns.tolist())
+        dval = xgb.DMatrix(X_val, label=y_val, feature_names=X_val.columns.tolist())
         
         # Train model with early stopping
         model = xgb.train(
             params,
             dtrain,
-            num_boost_round=1500,
+            num_boost_round=500,  # Reduced from 1500
             evals=[(dtrain, 'train'), (dval, 'val')],
-            early_stopping_rounds=50,
+            early_stopping_rounds=100,  # Increased from 50 for better early stopping
             verbose_eval=False
         )
         
@@ -153,18 +154,18 @@ def train_final_model(
     print("TRAINING FINAL MODEL")
     print("=" * 80)
     
-    # Create DMatrix
-    dtrain = xgb.DMatrix(X_train, label=y_train)
-    dval = xgb.DMatrix(X_val, label=y_val)
+    # Create DMatrix with feature names
+    dtrain = xgb.DMatrix(X_train, label=y_train, feature_names=X_train.columns.tolist())
+    dval = xgb.DMatrix(X_val, label=y_val, feature_names=X_val.columns.tolist())
     
     # Train model
     print("Training XGBoost model...")
     model = xgb.train(
         hyperparameters,
         dtrain,
-        num_boost_round=n_estimators,
+        num_boost_round=min(n_estimators, 500),  # Cap at 500 to prevent overfitting
         evals=[(dtrain, 'train'), (dval, 'val')],
-        early_stopping_rounds=50,
+        early_stopping_rounds=100,  # Increased from 50
         verbose_eval=50
     )
     
@@ -187,13 +188,21 @@ def get_feature_importance(model: xgb.Booster, feature_names: list) -> pd.DataFr
     Returns:
         DataFrame with feature importance
     """
-    # Get importance scores
+    # Get importance scores - use feature names directly if available
     importance_dict = model.get_score(importance_type='gain')
+    
+    # Check if feature names are in the importance dict (when feature_names were provided to DMatrix)
+    if importance_dict and any(name in importance_dict for name in feature_names):
+        # Feature names were provided, use them directly
+        importance_values = [importance_dict.get(name, 0) for name in feature_names]
+    else:
+        # Fallback: use f0, f1, f2... format
+        importance_values = [importance_dict.get(f'f{i}', 0) for i in range(len(feature_names))]
     
     # Create DataFrame
     importance_df = pd.DataFrame({
         'feature': feature_names,
-        'importance': [importance_dict.get(f'f{i}', 0) for i in range(len(feature_names))]
+        'importance': importance_values
     })
     
     # Sort by importance

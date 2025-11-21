@@ -116,7 +116,7 @@ Examples:
             X_train, y_train,
             X_val, y_val,
             best_params,
-            n_estimators=1500
+            n_estimators=500  # Reduced from 1500 to prevent overfitting
         )
         
         # 7. Get feature importance

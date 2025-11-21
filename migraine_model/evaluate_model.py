@@ -42,12 +42,25 @@ def evaluate_model(
     print(f"MODEL EVALUATION - {set_name.upper()} SET")
     print("=" * 80)
     
-    # Create DMatrix
-    dtest = xgb.DMatrix(X)
+    # Create DMatrix with feature names
+    dtest = xgb.DMatrix(X, feature_names=X.columns.tolist())
     
     # Get predictions
     y_pred_proba = model.predict(dtest)
     y_pred = (y_pred_proba >= 0.5).astype(int)
+    
+    # Validation checks for suspicious predictions
+    unique_proba = len(np.unique(y_pred_proba))
+    unique_pred = len(np.unique(y_pred))
+    
+    if unique_proba <= 2:
+        print(f"⚠ WARNING: Only {unique_proba} unique probability values! Model may be broken.")
+    if unique_pred == 1:
+        print(f"⚠ WARNING: Model predicts only one class ({y_pred[0]})! Severe overfitting or data issue.")
+        print(f"   All predictions: {y_pred[0]}")
+        print(f"   Probability range: [{y_pred_proba.min():.6f}, {y_pred_proba.max():.6f}]")
+    if (y_pred_proba == 1.0).all() or (y_pred_proba == 0.0).all():
+        print(f"⚠ WARNING: All probabilities are the same ({y_pred_proba[0]:.6f})! Model may be broken.")
     
     # Convert y to int if needed
     if y.dtype == bool:
