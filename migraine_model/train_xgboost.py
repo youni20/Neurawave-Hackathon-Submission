@@ -196,7 +196,10 @@ def optimize_hyperparameters(
     study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
     
     # CRITICAL: Check if all trials were rejected
-    if study.best_value == float('inf') or not np.isfinite(study.best_value):
+    # Optuna returns inf as float('inf'), check both ways
+    best_value_is_inf = (study.best_value == float('inf')) or (not np.isfinite(study.best_value)) or (str(study.best_value).lower() == 'inf')
+    
+    if best_value_is_inf:
         print("\n" + "=" * 80)
         print("⚠ WARNING: ALL TRIALS WERE REJECTED BY CONSTRAINTS!")
         print("=" * 80)
