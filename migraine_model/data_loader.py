@@ -112,6 +112,48 @@ def validate_data(df: pd.DataFrame) -> Dict:
     else:
         print("\n✓ No constant features found")
     
+    # Check for perfect predictors (features that perfectly separate classes)
+    perfect_predictor_features = []
+    if 'migraine' in df.columns:
+        perfect_predictors = []
+        for col in df.columns:
+            if col != 'migraine' and df[col].dtype in [np.number, 'object']:
+                is_perfect = False
+                if df[col].dtype == 'object':
+                    # For categorical, check each value
+                    for val in df[col].unique():
+                        mask = df[col] == val
+                        if mask.sum() > 10:  # Only check if enough samples
+                            target_rate = df.loc[mask, 'migraine'].mean()
+                            if target_rate == 0.0 or target_rate == 1.0:
+                                perfect_predictors.append(f"{col}={val}")
+                                perfect_predictor_features.append(col)
+                                is_perfect = True
+                                break
+                else:
+                    # For numeric, check if correlation is too high
+                    corr = abs(df[col].corr(df['migraine'].astype(int)))
+                    if corr > 0.95:
+                        perfect_predictors.append(f"{col} (corr={corr:.3f})")
+                        perfect_predictor_features.append(col)
+        
+        # Remove duplicates while preserving order
+        perfect_predictor_features = list(dict.fromkeys(perfect_predictor_features))
+        
+        if perfect_predictors:
+            print(f"\n⚠ WARNING: Perfect or near-perfect predictors found!")
+            print(f"   These features may cause severe overfitting:")
+            for pred in perfect_predictors[:10]:  # Show first 10
+                print(f"     - {pred}")
+            if len(perfect_predictors) > 10:
+                print(f"     ... and {len(perfect_predictors) - 10} more")
+            if perfect_predictor_features:
+                print(f"   Features to be removed: {perfect_predictor_features}")
+        else:
+            print("\n✓ No perfect predictors found")
+    
+    validation_report['perfect_predictors'] = perfect_predictor_features
+    
     # Basic statistics
     print(f"\nDataset shape: {df.shape[0]:,} rows × {df.shape[1]} columns")
     
@@ -120,12 +162,14 @@ def validate_data(df: pd.DataFrame) -> Dict:
     return validation_report
 
 
-def prepare_target(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
+def prepare_target(df: pd.DataFrame, remove_perfect_predictors: bool = True, correlation_threshold: float = 0.95) -> Tuple[pd.DataFrame, pd.Series]:
     """
-    Separate features and target.
+    Separate features and target, optionally removing perfect predictors.
     
     Args:
         df: DataFrame with features and target
+        remove_perfect_predictors: Whether to automatically remove features with >threshold correlation
+        correlation_threshold: Correlation threshold above which features are removed (default: 0.95)
     
     Returns:
         Tuple of (features_df, target_series)
@@ -136,9 +180,45 @@ def prepare_target(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
     X = df.drop(columns=['migraine'])
     y = df['migraine']
     
+    # Check for data leakage
+    if 'migraine' in X.columns:
+        raise ValueError("ERROR: Target 'migraine' found in features! Data leakage detected!")
+    
+    # Remove perfect predictors automatically
+    if remove_perfect_predictors:
+        features_to_remove = []
+        y_int = y.astype(int) if y.dtype == bool else y
+        
+        for col in X.columns:
+            if X[col].dtype in [np.number]:
+                # Check correlation for numeric features
+                corr = abs(X[col].corr(y_int))
+                if corr > correlation_threshold:
+                    features_to_remove.append(col)
+                    print(f"⚠ Removing perfect predictor: {col} (correlation={corr:.4f} > {correlation_threshold})")
+            elif X[col].dtype == 'object':
+                # For categorical, check if any value perfectly predicts target
+                for val in X[col].unique():
+                    mask = X[col] == val
+                    if mask.sum() > 10:  # Only check if enough samples
+                        target_rate = y_int[mask].mean()
+                        if target_rate == 0.0 or target_rate == 1.0:
+                            features_to_remove.append(col)
+                            print(f"⚠ Removing perfect predictor: {col} (value '{val}' has target_rate={target_rate:.4f})")
+                            break
+        
+        if features_to_remove:
+            X = X.drop(columns=features_to_remove)
+            print(f"✓ Removed {len(features_to_remove)} perfect predictor feature(s)")
+    
     # Convert boolean to int if needed
     if y.dtype == bool:
         y = y.astype(int)
+    
+    # Validate target has both classes
+    unique_targets = y.unique()
+    if len(unique_targets) < 2:
+        raise ValueError(f"ERROR: Target has only {len(unique_targets)} unique value(s): {unique_targets}. Need at least 2 classes!")
     
     return X, y
 

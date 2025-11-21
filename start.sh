@@ -2,6 +2,7 @@
 
 # Migraine Prediction Model Training Script
 # This script trains the XGBoost model with all necessary steps
+# Designed for cloud environments - assumes data files are already prepared
 
 set -e  # Exit on error
 
@@ -59,6 +60,8 @@ echo ""
 echo -e "${YELLOW}[3/5] Checking input data file...${NC}"
 if [ ! -f "$INPUT_FILE" ]; then
     echo -e "${RED}Error: Input file '$INPUT_FILE' not found${NC}"
+    echo -e "${YELLOW}Note: Data generation scripts are not available in cloud environment${NC}"
+    echo -e "${YELLOW}Please ensure $INPUT_FILE is uploaded before training${NC}"
     exit 1
 fi
 
@@ -66,6 +69,12 @@ fi
 if [ ! -s "$INPUT_FILE" ]; then
     echo -e "${RED}Error: Input file '$INPUT_FILE' is empty${NC}"
     exit 1
+fi
+
+# Verify data has required features
+if ! head -1 "$INPUT_FILE" | grep -q "consecutive_migraine_days"; then
+    echo -e "${YELLOW}  ⚠ Warning: $INPUT_FILE may be missing temporal features${NC}"
+    echo -e "${YELLOW}  Expected: consecutive_migraine_days, days_since_last_migraine${NC}"
 fi
 
 ROW_COUNT=$(wc -l < "$INPUT_FILE" | tr -d ' ')
@@ -127,4 +136,3 @@ else
     echo -e "${RED}========================================${NC}"
     exit $TRAIN_EXIT_CODE
 fi
-

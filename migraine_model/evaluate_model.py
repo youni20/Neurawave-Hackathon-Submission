@@ -42,8 +42,8 @@ def evaluate_model(
     print(f"MODEL EVALUATION - {set_name.upper()} SET")
     print("=" * 80)
     
-    # Create DMatrix
-    dtest = xgb.DMatrix(X)
+    # Create DMatrix with feature names
+    dtest = xgb.DMatrix(X, feature_names=X.columns.tolist())
     
     # Get predictions
     y_pred_proba = model.predict(dtest)
@@ -55,7 +55,7 @@ def evaluate_model(
     else:
         y_int = y
     
-    # Calculate metrics
+    # Calculate metrics first
     metrics = {
         'roc_auc': roc_auc_score(y_int, y_pred_proba),
         'log_loss': log_loss(y_int, y_pred_proba),
@@ -65,6 +65,41 @@ def evaluate_model(
         'f1_score': f1_score(y_int, y_pred),
         'accuracy': accuracy_score(y_int, y_pred),
     }
+    
+    # Validation checks for suspicious predictions (after metrics are calculated)
+    unique_proba = len(np.unique(y_pred_proba))
+    unique_pred = len(np.unique(y_pred))
+    proba_range = y_pred_proba.max() - y_pred_proba.min()
+    
+    # Enhanced overfitting detection
+    print(f"\nOverfitting Detection:")
+    print(f"  Unique probability values: {unique_proba}")
+    print(f"  Probability range: [{y_pred_proba.min():.6f}, {y_pred_proba.max():.6f}]")
+    
+    if unique_proba <= 2:
+        print(f"⚠ WARNING: Only {unique_proba} unique probability values! Model may be broken.")
+        print(f"   This suggests perfect separability or severe overfitting.")
+        print(f"   Expected: >100 unique values for a healthy model.")
+    elif unique_proba < 100:
+        print(f"⚠ WARNING: Low number of unique probability values ({unique_proba}).")
+        print(f"   This may indicate overfitting. Expected: >100 unique values.")
+    else:
+        print(f"✓ Number of unique probability values is healthy ({unique_proba})")
+    
+    if unique_pred == 1:
+        print(f"⚠ WARNING: Model predicts only one class ({y_pred[0]})! Severe overfitting or data issue.")
+        print(f"   All predictions: {y_pred[0]}")
+        print(f"   Probability range: [{y_pred_proba.min():.6f}, {y_pred_proba.max():.6f}]")
+    if (y_pred_proba == 1.0).all() or (y_pred_proba == 0.0).all():
+        print(f"⚠ WARNING: All probabilities are the same ({y_pred_proba[0]:.6f})! Model may be broken.")
+    if proba_range < 0.1:
+        print(f"⚠ WARNING: Probability range is very small ({proba_range:.6f})! Model may be overconfident.")
+    if metrics['log_loss'] < 0.01:
+        print(f"⚠ WARNING: Log loss is extremely low ({metrics['log_loss']:.6f})! Model may be overfitting.")
+    
+    # Store overfitting indicators in metrics
+    metrics['unique_probabilities'] = unique_proba
+    metrics['probability_range'] = proba_range
     
     # Confusion matrix
     cm = confusion_matrix(y_int, y_pred)
