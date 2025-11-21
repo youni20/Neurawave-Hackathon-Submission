@@ -1,33 +1,55 @@
 # Dependencies
-node_modules
+node_modules/
 .pnp
 .pnp.js
 
 # Testing/Debug
-coverage
+coverage/
 .DS_Store
 
 # Production
-dist
-build
+dist/
+build/
 
 # Environment variables
 .env
 .env.local
+.env.*.local
 
-# User Data (Don't push your local test files)
+# User Data (Don't push local test files)
+backend/userdata/
 userdata/
 *.json
 !package.json
 !vite.config.js
 !jsconfig.json
+eslint.config.js
+
+# Large data files (optional - comment out to include)
 synthetic_data_100_000/
 synthetic_data_10_000/
 cleaned_data/
+data/*.csv
+
+# Python
 .venv/
+.env
+venv/
 __pycache__/
-*.csv
-node_modules
+*.py[cod]
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
 
 synthetic_data_100_000/
 synthetic_data_10_000/

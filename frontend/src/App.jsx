@@ -5,6 +5,10 @@ import {
   ChevronRight, ChevronLeft, Check, Zap, Save, 
   Thermometer, Activity, AlertCircle
 } from 'lucide-react';
+import Navigation from './Navigation';
+import DoctorPage from './DoctorPage';
+import MusicPage from './MusicPage';
+import WeatherPage from './WeatherPage';
 
 // --- CONFIGURATION & UTILS ---
 
@@ -431,6 +435,7 @@ const Dashboard = ({ fullData, onEditSettings }) => {
 export default function App() {
   const [fullData, setFullData] = useState(null);
   const [mode, setMode] = useState('loading'); // onboarding | daily | dashboard
+  const [currentPage, setCurrentPage] = useState('dashboard'); // dashboard | weather | doctor | music
 
   useEffect(() => {
     const loaded = DataManager.loadData();
@@ -467,10 +472,61 @@ export default function App() {
   if (mode === 'loading') return <div className="min-h-screen bg-slate-50"/>;
 
   return (
-    <div className="font-sans text-slate-900">
+    <div className="font-sans text-slate-900 bg-gradient-to-br from-slate-900 to-slate-800 min-h-screen">
       {mode === 'onboarding' && <Onboarding onComplete={handleOnboardingFinish} />}
       {mode === 'daily' && <DailyCheckIn onComplete={handleDailyFinish} />}
-      {mode === 'dashboard' && <Dashboard fullData={fullData} onEditSettings={() => setMode('onboarding')} />}
+      {mode === 'dashboard' && (
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 py-6 px-4">
+          <Navigation currentPage={currentPage} setCurrentPage={setCurrentPage} />
+          
+          <AnimatePresence mode="wait">
+            {currentPage === 'dashboard' && (
+              <motion.div
+                key="dashboard"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <Dashboard fullData={fullData} onEditSettings={() => setMode('onboarding')} />
+              </motion.div>
+            )}
+            {currentPage === 'weather' && (
+              <motion.div
+                key="weather"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <WeatherPage />
+              </motion.div>
+            )}
+            {currentPage === 'doctor' && (
+              <motion.div
+                key="doctor"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <DoctorPage />
+              </motion.div>
+            )}
+            {currentPage === 'music' && (
+              <motion.div
+                key="music"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <MusicPage />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 }
