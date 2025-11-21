@@ -1,0 +1,23 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Testing/Debug
+coverage
+.DS_Store
+
+# Production
+dist
+build
+
+# Environment variables
+.env
+.env.local
+
+# User Data (Don't push your local test files)
+userdata/
+*.json
+!package.json
+!vite.config.js
+!jsconfig.json
