@@ -52,15 +52,21 @@ def evaluate_model(
     # Validation checks for suspicious predictions
     unique_proba = len(np.unique(y_pred_proba))
     unique_pred = len(np.unique(y_pred))
+    proba_range = y_pred_proba.max() - y_pred_proba.min()
     
     if unique_proba <= 2:
         print(f"⚠ WARNING: Only {unique_proba} unique probability values! Model may be broken.")
+        print(f"   This suggests perfect separability or severe overfitting.")
     if unique_pred == 1:
         print(f"⚠ WARNING: Model predicts only one class ({y_pred[0]})! Severe overfitting or data issue.")
         print(f"   All predictions: {y_pred[0]}")
         print(f"   Probability range: [{y_pred_proba.min():.6f}, {y_pred_proba.max():.6f}]")
     if (y_pred_proba == 1.0).all() or (y_pred_proba == 0.0).all():
         print(f"⚠ WARNING: All probabilities are the same ({y_pred_proba[0]:.6f})! Model may be broken.")
+    if proba_range < 0.1:
+        print(f"⚠ WARNING: Probability range is very small ({proba_range:.6f})! Model may be overconfident.")
+    if metrics['log_loss'] < 0.01:
+        print(f"⚠ WARNING: Log loss is extremely low ({metrics['log_loss']:.6f})! Model may be overfitting.")
     
     # Convert y to int if needed
     if y.dtype == bool:
