@@ -61,17 +61,59 @@ Examples:
         help='Random seed for reproducibility (default: 42)'
     )
     
+    parser.add_argument(
+        '--use-distribution-shift',
+        action='store_true',
+        help='Use separate train/val/test files with distribution shift (requires --train-file, --val-file, --test-file)'
+    )
+    
+    parser.add_argument(
+        '--train-file',
+        type=str,
+        default=None,
+        help='Training data file (required if --use-distribution-shift)'
+    )
+    
+    parser.add_argument(
+        '--val-file',
+        type=str,
+        default=None,
+        help='Validation data file (required if --use-distribution-shift)'
+    )
+    
+    parser.add_argument(
+        '--test-file',
+        type=str,
+        default=None,
+        help='Test data file (required if --use-distribution-shift)'
+    )
+    
     args = parser.parse_args()
     
-    # Validate input file
-    if not Path(args.input).exists():
-        print(f"Error: Input file '{args.input}' not found.", file=sys.stderr)
-        sys.exit(1)
+    # Validate input file (only if not using distribution shift)
+    if not args.use_distribution_shift:
+        if not Path(args.input).exists():
+            print(f"Error: Input file '{args.input}' not found.", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Validate distribution shift files
+        for file_arg, file_path in [('--train-file', args.train_file), 
+                                    ('--val-file', args.val_file), 
+                                    ('--test-file', args.test_file)]:
+            if not Path(file_path).exists():
+                print(f"Error: {file_arg} file '{file_path}' not found.", file=sys.stderr)
+                sys.exit(1)
     
     print("=" * 80)
     print("MIGRAINE PREDICTION MODEL TRAINING")
     print("=" * 80)
-    print(f"Input file: {args.input}")
+    if args.use_distribution_shift:
+        print(f"Using distribution shift: YES")
+        print(f"  Train file: {args.train_file}")
+        print(f"  Val file:   {args.val_file}")
+        print(f"  Test file:  {args.test_file}")
+    else:
+        print(f"Input file: {args.input}")
     print(f"Output directory: {args.output}")
     print(f"Hyperparameter trials: {args.trials}")
     print(f"Random state: {args.random_state}")
@@ -81,27 +123,74 @@ Examples:
         # Set random seeds
         np.random.seed(args.random_state)
         
-        # 1. Load and validate data
-        df = load_data(args.input)
-        validation_report = validate_data(df)
-        
-        # 2. Prepare target
-        X, y = prepare_target(df)
-        
-        # 3. Feature engineering
-        print("\n" + "=" * 80)
-        print("FEATURE ENGINEERING")
-        print("=" * 80)
-        feature_engineer = FeatureEngineer()
-        X_processed = feature_engineer.fit_transform(X)
-        
-        # 4. Data splitting
-        X_train, X_val, X_test, y_train, y_val, y_test = stratified_split(
-            X_processed, y,
-            test_size=0.15,
-            val_size=0.15,
-            random_state=args.random_state
-        )
+        # 1. Load data (with or without distribution shift)
+        if args.use_distribution_shift:
+            if not args.train_file or not args.val_file or not args.test_file:
+                print("Error: --use-distribution-shift requires --train-file, --val-file, and --test-file", file=sys.stderr)
+                sys.exit(1)
+            
+            print("\n" + "=" * 80)
+            print("LOADING DATA WITH DISTRIBUTION SHIFT")
+            print("=" * 80)
+            print("Using separate train/val/test files with different distributions")
+            print("This helps detect overfitting by testing generalization to different data distributions.")
+            print("=" * 80)
+            
+            # Load separate files
+            df_train = load_data(args.train_file)
+            df_val = load_data(args.val_file)
+            df_test = load_data(args.test_file)
+            
+            # Validate each
+            print("\nValidating training data...")
+            validation_report_train = validate_data(df_train)
+            print("\nValidating validation data...")
+            validation_report_val = validate_data(df_val)
+            print("\nValidating test data...")
+            validation_report_test = validate_data(df_test)
+            
+            # Prepare targets
+            X_train_raw, y_train = prepare_target(df_train)
+            X_val_raw, y_val = prepare_target(df_val)
+            X_test_raw, y_test = prepare_target(df_test)
+            
+            # Feature engineering (fit on train, transform all)
+            print("\n" + "=" * 80)
+            print("FEATURE ENGINEERING")
+            print("=" * 80)
+            feature_engineer = FeatureEngineer()
+            X_train = feature_engineer.fit_transform(X_train_raw)
+            X_val = feature_engineer.transform(X_val_raw)
+            X_test = feature_engineer.transform(X_test_raw)
+            
+            print(f"\nData split (from separate files):")
+            print(f"  Training:   {len(X_train):,} samples")
+            print(f"  Validation: {len(X_val):,} samples")
+            print(f"  Test:       {len(X_test):,} samples")
+            
+        else:
+            # Original approach: single file, random split
+            # 1. Load and validate data
+            df = load_data(args.input)
+            validation_report = validate_data(df)
+            
+            # 2. Prepare target
+            X, y = prepare_target(df)
+            
+            # 3. Feature engineering
+            print("\n" + "=" * 80)
+            print("FEATURE ENGINEERING")
+            print("=" * 80)
+            feature_engineer = FeatureEngineer()
+            X_processed = feature_engineer.fit_transform(X)
+            
+            # 4. Data splitting
+            X_train, X_val, X_test, y_train, y_val, y_test = stratified_split(
+                X_processed, y,
+                test_size=0.15,
+                val_size=0.15,
+                random_state=args.random_state
+            )
         
         # 5. Hyperparameter optimization
         best_params = optimize_hyperparameters(
