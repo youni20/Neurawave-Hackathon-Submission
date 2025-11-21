@@ -20,42 +20,19 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
-def evaluate_model(
-    model: xgb.Booster,
-    X: pd.DataFrame,
+def _evaluate_from_proba(
     y: pd.Series,
+    y_pred_proba: np.ndarray,
     set_name: str = "Test"
 ) -> Dict:
-    """
-    Evaluate model performance.
-    
-    Args:
-        model: Trained XGBoost model
-        X: Features
-        y: True labels
-        set_name: Name of the dataset (for reporting)
-    
-    Returns:
-        Dictionary with evaluation metrics
-    """
+    """Shared evaluation logic for raw predicted probabilities."""
     print(f"\n" + "=" * 80)
     print(f"MODEL EVALUATION - {set_name.upper()} SET")
     print("=" * 80)
     
-    # Create DMatrix with feature names
-    dtest = xgb.DMatrix(X, feature_names=X.columns.tolist())
-    
-    # Get predictions
-    y_pred_proba = model.predict(dtest)
     y_pred = (y_pred_proba >= 0.5).astype(int)
+    y_int = y.astype(int) if y.dtype == bool else y
     
-    # Convert y to int if needed
-    if y.dtype == bool:
-        y_int = y.astype(int)
-    else:
-        y_int = y
-    
-    # Calculate metrics first
     metrics = {
         'roc_auc': roc_auc_score(y_int, y_pred_proba),
         'log_loss': log_loss(y_int, y_pred_proba),
@@ -66,12 +43,10 @@ def evaluate_model(
         'accuracy': accuracy_score(y_int, y_pred),
     }
     
-    # Validation checks for suspicious predictions (after metrics are calculated)
     unique_proba = len(np.unique(y_pred_proba))
     unique_pred = len(np.unique(y_pred))
     proba_range = y_pred_proba.max() - y_pred_proba.min()
     
-    # Enhanced overfitting detection
     print(f"\nOverfitting Detection:")
     print(f"  Unique probability values: {unique_proba}")
     print(f"  Probability range: [{y_pred_proba.min():.6f}, {y_pred_proba.max():.6f}]")
@@ -97,16 +72,13 @@ def evaluate_model(
     if metrics['log_loss'] < 0.01:
         print(f"⚠ WARNING: Log loss is extremely low ({metrics['log_loss']:.6f})! Model may be overfitting.")
     
-    # Store overfitting indicators in metrics
     metrics['unique_probabilities'] = unique_proba
     metrics['probability_range'] = proba_range
     
-    # Confusion matrix
     cm = confusion_matrix(y_int, y_pred)
     metrics['confusion_matrix'] = cm
     metrics['tn'], metrics['fp'], metrics['fn'], metrics['tp'] = cm.ravel()
     
-    # Print metrics
     print(f"\nMetrics:")
     print(f"  ROC-AUC Score:    {metrics['roc_auc']:.6f}")
     print(f"  Log Loss:         {metrics['log_loss']:.6f}")
@@ -128,6 +100,34 @@ def evaluate_model(
     print("=" * 80)
     
     return metrics, y_pred_proba
+
+
+def evaluate_model(
+    model: xgb.Booster,
+    X: pd.DataFrame,
+    y: pd.Series,
+    set_name: str = "Test"
+) -> Dict:
+    """
+    Evaluate model performance for a single XGBoost booster.
+    
+    Returns:
+        Tuple(metrics, probabilities)
+    """
+    dtest = xgb.DMatrix(X, feature_names=X.columns.tolist())
+    y_pred_proba = model.predict(dtest)
+    return _evaluate_from_proba(y, y_pred_proba, set_name)
+
+
+def evaluate_probabilities(
+    y: pd.Series,
+    y_pred_proba: np.ndarray,
+    set_name: str = "Test"
+):
+    """
+    Evaluate metrics from pre-computed probabilities (ensemble support).
+    """
+    return _evaluate_from_proba(y, y_pred_proba, set_name)
 
 
 def plot_roc_curve(y_true: pd.Series, y_pred_proba: np.ndarray, save_path: str = None):

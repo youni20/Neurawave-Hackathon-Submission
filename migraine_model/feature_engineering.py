@@ -5,7 +5,7 @@ Handles categorical encoding and feature validation.
 
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Iterable
 from sklearn.preprocessing import LabelEncoder
 import warnings
 warnings.filterwarnings('ignore')
@@ -14,11 +14,24 @@ warnings.filterwarnings('ignore')
 class FeatureEngineer:
     """Feature engineering pipeline."""
     
-    def __init__(self):
-        """Initialize feature engineer."""
+    def __init__(
+        self,
+        symptom_scaling: str = 'none',
+        symptom_temperature: float = 1.0
+    ):
+        """
+        Initialize feature engineer.
+        
+        Args:
+            symptom_scaling: Non-linear squashing to apply to symptom features
+                             Options: none, tanh, sigmoid
+            symptom_temperature: Temperature parameter for scaling (higher = flatter)
+        """
         self.label_encoders = {}
         self.feature_names = []
         self.removed_features = []
+        self.symptom_scaling = symptom_scaling.lower()
+        self.symptom_temperature = max(symptom_temperature, 1e-3)
     
     def fit_transform(self, X: pd.DataFrame) -> pd.DataFrame:
         """
@@ -82,6 +95,9 @@ class FeatureEngineer:
                 max_val = X_processed[col].max()
                 if min_val < 0 or max_val > 1:
                     print(f"⚠ Warning: {col} is outside [0,1] range: [{min_val:.4f}, {max_val:.4f}]")
+        
+        # Apply temperature-based squashing to symptom channels before interactions
+        self._apply_symptom_scaling(X_processed)
         
         # PHASE 0: Remove mood_score_binned - it creates perfect separability
         # Do NOT create mood_score_binned - it's a derived feature that amplifies symptom signal
@@ -210,6 +226,9 @@ class FeatureEngineer:
             X_processed[col] = X_processed[col].astype(int)
         
         # PHASE 0: Do NOT recreate mood_score_binned or symptom interactions
+        # Apply same symptom scaling
+        self._apply_symptom_scaling(X_processed)
+        
         # PHASE 3: Recreate predictor-based interactions with normalization (same as fit_transform)
         if 'stress_intensity' in X_processed.columns and 'sleep' in X_processed.columns:
             stress_norm = (X_processed['stress_intensity'] - X_processed['stress_intensity'].mean()) / (X_processed['stress_intensity'].std() + 1e-8)
@@ -255,4 +274,48 @@ class FeatureEngineer:
     def get_feature_groups(self) -> Dict[str, List[str]]:
         """Get feature groups for balancing analysis."""
         return self.feature_groups.copy() if hasattr(self, 'feature_groups') else {}
+    
+    def get_feature_subset(self, groups: Iterable[str]) -> List[str]:
+        """
+        Build ordered list of features that belong to provided groups.
+        
+        Args:
+            groups: Iterable of group names (predictor, temporal, symptom, interaction, other)
+        
+        Returns:
+            Ordered, de-duplicated feature list belonging to selected groups.
+        """
+        if not hasattr(self, 'feature_groups'):
+            return []
+        
+        seen = set()
+        ordered = []
+        for group in groups:
+            for feature in self.feature_groups.get(group, []):
+                if feature not in seen:
+                    ordered.append(feature)
+                    seen.add(feature)
+        return ordered
+    
+    def _apply_symptom_scaling(self, df: pd.DataFrame):
+        """Apply non-linear squashing to symptom features to avoid dominance."""
+        if self.symptom_scaling == 'none':
+            return
+        
+        symptom_cols = [
+            col for col in df.columns
+            if df[col].dtype in [np.float64, np.float32, np.int64, np.int32]
+            and any(keyword in col.lower() for keyword in ['mood_score', 'step_count', 'screen_brightness'])
+        ]
+        
+        if not symptom_cols:
+            return
+        
+        temp = self.symptom_temperature
+        if self.symptom_scaling == 'tanh':
+            for col in symptom_cols:
+                df[col] = np.tanh(df[col] / temp)
+        elif self.symptom_scaling == 'sigmoid':
+            for col in symptom_cols:
+                df[col] = 1.0 / (1.0 + np.exp(-df[col] / temp))
 

@@ -5,7 +5,7 @@ XGBoost model training with hyperparameter tuning.
 import pandas as pd
 import numpy as np
 import xgboost as xgb
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple, Optional, List
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 import optuna
 import warnings
@@ -30,13 +30,47 @@ def calculate_scale_pos_weight(y: pd.Series) -> float:
     return 1.0
 
 
+def _compute_group_importance_share(importance_dict: Dict[str, float], target_features: List[str]) -> float:
+    """Compute share of importance captured by target feature names."""
+    if not importance_dict or not target_features:
+        return 0.0
+    total_importance = sum(importance_dict.values())
+    if total_importance <= 0:
+        return 0.0
+    target_set = set(target_features)
+    target_importance = sum(val for feat, val in importance_dict.items() if feat in target_set)
+    return target_importance / total_importance
+
+
+class SymptomImportanceCallback(xgb.callback.TrainingCallback):
+    """Track symptom feature dominance during boosting."""
+    
+    def __init__(self, symptom_features: List[str], threshold: float = 0.5, report_every: int = 5):
+        self.symptom_features = list(symptom_features or [])
+        self.threshold = threshold
+        self.report_every = report_every
+        self.max_share = 0.0
+    
+    def after_iteration(self, model, epoch: int, evals_log) -> bool:
+        if not self.symptom_features:
+            return False
+        importance_dict = model.get_score(importance_type='gain')
+        share = _compute_group_importance_share(importance_dict, self.symptom_features)
+        self.max_share = max(self.max_share, share)
+        if share > self.threshold and ((epoch + 1) % self.report_every == 0):
+            print(f"  ⚠ Symptom importance {share*100:.2f}% exceeds {self.threshold*100:.0f}% at iteration {epoch+1}")
+        return False
+
+
 def optimize_hyperparameters(
     X_train: pd.DataFrame,
     y_train: pd.Series,
     X_val: pd.DataFrame,
     y_val: pd.Series,
     n_trials: int = 100,
-    random_state: int = 42
+    random_state: int = 42,
+    feature_subset_name: str = "full",
+    symptom_penalty_config: Optional[Dict] = None
 ) -> Dict:
     """
     Optimize XGBoost hyperparameters using Optuna.
@@ -56,9 +90,24 @@ def optimize_hyperparameters(
     print("HYPERPARAMETER OPTIMIZATION")
     print("=" * 80)
     print(f"Running {n_trials} optimization trials...")
+    print(f"Feature subset: {feature_subset_name}")
     
     scale_pos_weight = calculate_scale_pos_weight(y_train)
     print(f"Class imbalance ratio (scale_pos_weight): {scale_pos_weight:.4f}")
+    
+    penalty_threshold = 0.0
+    penalty_weight = 0.0
+    penalty_features: List[str] = []
+    if symptom_penalty_config:
+        penalty_threshold = symptom_penalty_config.get('threshold', 0.5)
+        penalty_weight = symptom_penalty_config.get('weight', 5.0)
+        penalty_features = [
+            col for col in symptom_penalty_config.get('features', [])
+            if col in X_train.columns
+        ]
+        if penalty_features:
+            print(f"Symptom penalty enabled (threshold={penalty_threshold:.2f}, weight={penalty_weight}) "
+                  f"for {len(penalty_features)} features.")
     
     def objective(trial):
         """Objective function for Optuna."""
@@ -103,6 +152,12 @@ def optimize_hyperparameters(
         dtrain = xgb.DMatrix(X_train_noisy, label=y_train, feature_names=X_train.columns.tolist())
         dval = xgb.DMatrix(X_val, label=y_val, feature_names=X_val.columns.tolist())
         
+        callbacks = []
+        penalty_cb = None
+        if penalty_features:
+            penalty_cb = SymptomImportanceCallback(penalty_features, threshold=penalty_threshold)
+            callbacks.append(penalty_cb)
+        
         # AGGRESSIVE: Train model with very aggressive early stopping
         model = xgb.train(
             params,
@@ -110,8 +165,16 @@ def optimize_hyperparameters(
             num_boost_round=50,  # AGGRESSIVE: Reduced from 100 to 50
             evals=[(dtrain, 'train'), (dval, 'val')],
             early_stopping_rounds=5,  # AGGRESSIVE: More aggressive early stopping (was 10)
-            verbose_eval=False
+            verbose_eval=False,
+            callbacks=callbacks if callbacks else None
         )
+        
+        penalty_add = 0.0
+        if penalty_cb and penalty_weight > 0:
+            share_violation = max(0.0, penalty_cb.max_share - penalty_threshold)
+            penalty_add = penalty_weight * share_violation
+            if share_violation > 0:
+                print(f"  Applying symptom dominance penalty (+{penalty_add:.6f}) - max share {penalty_cb.max_share*100:.2f}%")
         
         # PHASE 0: Check feature importance constraint
         importance_dict = model.get_score(importance_type='gain')
@@ -183,7 +246,7 @@ def optimize_hyperparameters(
                                 return float('inf')  # Reject this trial
         
         # Get best score
-        best_score = model.best_score
+        best_score = model.best_score + penalty_add
         return best_score
     
     # Create study and optimize
@@ -258,7 +321,9 @@ def train_final_model(
     X_val: pd.DataFrame,
     y_val: pd.Series,
     hyperparameters: Dict,
-    n_estimators: int = 1000
+    n_estimators: int = 1000,
+    feature_subset_name: str = "full",
+    symptom_penalty_config: Optional[Dict] = None
 ) -> xgb.Booster:
     """
     Train final XGBoost model with best hyperparameters.
@@ -300,15 +365,34 @@ def train_final_model(
     dval = xgb.DMatrix(X_val, label=y_val, feature_names=X_val.columns.tolist())
     
     # AGGRESSIVE: Train model with very aggressive early stopping
-    print("Training XGBoost model with aggressive regularization...")
+    penalty_features: List[str] = []
+    penalty_threshold = 0.0
+    if symptom_penalty_config:
+        penalty_threshold = symptom_penalty_config.get('threshold', 0.5)
+        penalty_features = [
+            col for col in symptom_penalty_config.get('features', [])
+            if col in X_train.columns
+        ]
+    
+    print(f"Training XGBoost model with aggressive regularization (subset={feature_subset_name})...")
+    callbacks = []
+    penalty_cb = None
+    if penalty_features:
+        penalty_cb = SymptomImportanceCallback(penalty_features, threshold=penalty_threshold)
+        callbacks.append(penalty_cb)
+    
     model = xgb.train(
         hyperparameters,
         dtrain,
         num_boost_round=min(n_estimators, 50),  # AGGRESSIVE: Much lower cap: 50 instead of 100
         evals=[(dtrain, 'train'), (dval, 'val')],
         early_stopping_rounds=5,  # AGGRESSIVE: Very aggressive early stopping (was 10)
-        verbose_eval=25
+        verbose_eval=25,
+        callbacks=callbacks if callbacks else None
     )
+    
+    if penalty_cb:
+        print(f"  Max symptom importance share during training: {penalty_cb.max_share*100:.2f}% (threshold {penalty_threshold*100:.0f}%)")
     
     # CRITICAL: Check feature importance constraints after final training
     print("\nValidating final model feature importance constraints...")
