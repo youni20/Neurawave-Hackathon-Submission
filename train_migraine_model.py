@@ -139,12 +139,44 @@ Examples:
             print(f"  Top feature accounts for: {top_feature_pct:.2f}% of total importance")
             print(f"  Top 3 features account for: {top3_pct:.2f}% of total importance")
             
+            # PHASE 3: Enhanced validation - check feature groups
+            feature_groups = feature_engineer.get_feature_groups() if hasattr(feature_engineer, 'get_feature_groups') else {}
+            if feature_groups:
+                print(f"\nFeature Group Analysis:")
+                for group_name, group_features in feature_groups.items():
+                    if group_features:
+                        group_importance = importance_df[importance_df['feature'].isin(group_features)]['importance'].sum()
+                        group_pct = (group_importance / total_importance * 100) if total_importance > 0 else 0
+                        print(f"  {group_name.capitalize()} group: {group_pct:.2f}% of total importance ({len(group_features)} features)")
+            
+            # PHASE 3: Check if predictor features are in top 10
+            top10_features = importance_df.head(10)['feature'].tolist()
+            predictor_features = feature_groups.get('predictor', [])
+            predictor_in_top10 = [f for f in top10_features if f in predictor_features]
+            if len(predictor_in_top10) >= 3:
+                print(f"  ✓ Predictor features in top 10: {len(predictor_in_top10)}/{len(predictor_in_top10)} (good)")
+            else:
+                print(f"  ⚠ WARNING: Only {len(predictor_in_top10)} predictor features in top 10! Expected: ≥3")
+            
+            # PHASE 0: Check if symptom features dominate top 3
+            symptom_features = feature_groups.get('symptom', [])
+            top3_features = importance_df.head(3)['feature'].tolist()
+            symptom_in_top3 = [f for f in top3_features if any(symptom in f.lower() for symptom in ['mood', 'step_count', 'screen_brightness'])]
+            if symptom_in_top3:
+                symptom_top3_importance = importance_df[importance_df['feature'].isin(symptom_in_top3)]['importance'].sum()
+                symptom_top3_pct = (symptom_top3_importance / top3_importance * 100) if top3_importance > 0 else 0
+                if symptom_top3_pct > 50:
+                    print(f"  ⚠ WARNING: Symptom features dominate top 3 ({symptom_top3_pct:.2f}% of top 3 importance)!")
+                    print(f"    Symptom features in top 3: {symptom_in_top3}")
+                else:
+                    print(f"  ✓ Symptom features in top 3: {symptom_top3_pct:.2f}% (acceptable)")
+            
             if top_feature_pct > 50:
                 print(f"  ⚠ WARNING: Single feature has >50% importance! Model may be overfitting.")
-            if top3_pct > 90:
-                print(f"  ⚠ WARNING: Top 3 features have >90% importance! Model may be overfitting.")
-            if num_features_used < 5:
-                print(f"  ⚠ WARNING: Only {num_features_used} features are being used! Expected: >5 features.")
+            if top3_pct > 60:
+                print(f"  ⚠ WARNING: Top 3 features have >60% importance! Model may be overfitting.")
+            if num_features_used < 12:
+                print(f"  ⚠ WARNING: Only {num_features_used} features are being used! Expected: ≥12 features.")
             else:
                 print(f"  ✓ Feature usage is healthy ({num_features_used} features with non-zero importance)")
         
