@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, TrendingUp, AlertCircle, Calendar, Brain, X, Loader } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, AlertCircle, Calendar, Brain, X, Loader, Sun } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // --- CONSTANTS ---
-const API_URL = "http://100.89.109.97:5000";
+// 1. Python AI Server (Dr. Neura)
+const AI_API_URL = "http://100.89.109.97:5000"; 
+// 2. Node.js Data/Sensor Server (Localhost)
+const DATA_API_URL = "http://localhost:3001";
 
 const SYMPTOM_OPTIONS = [
   { id: 'migraine', label: 'Migraine', icon: '🧠' },
@@ -87,12 +90,6 @@ const AdviceModal = ({ isOpen, onClose, loading, adviceData }) => {
               <p className="text-center text-xs text-slate-500 mt-4">
                 *AI advice is for informational purposes only. Consult a real doctor for medical decisions.
               </p>
-              
-              {adviceData.original_log && adviceData.original_log.triggers.includes('weather') && (
-                 <div className="mt-2 text-xs text-slate-500 italic">
-                    
-                 </div>
-              )}
             </div>
           ) : (
             <p className="text-center text-red-400">Failed to generate advice. Please try again.</p>
@@ -128,12 +125,35 @@ export default function TriggerTracker({ onDataChange, user }) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiResult, setAiResult] = useState(null);
 
-  // Load existing logs
+  // Sensor State
+  const [lightLevel, setLightLevel] = useState(0);
+  const [sensorStatus, setSensorStatus] = useState('Disconnected');
+
+  // 1. Poll for Light Sensor Data (From Node Backend)
+  useEffect(() => {
+    const fetchSensor = async () => {
+      try {
+        const res = await fetch(`${DATA_API_URL}/sensor/light`);
+        const data = await res.json();
+        setLightLevel(data.percent);
+        setSensorStatus(data.status);
+      } catch (e) {
+        // console.warn("Sensor fetch failed", e);
+        setSensorStatus('Disconnected');
+      }
+    };
+
+    fetchSensor();
+    const interval = setInterval(fetchSensor, 1000); // Run every 1 second
+    return () => clearInterval(interval);
+  }, []);
+
+  // 2. Load existing logs (From Node Backend)
   useEffect(() => {
     const load = async () => {
       if (user && user.name && user.surname && user.id) {
         try {
-          const resp = await fetch(`http://localhost:3001/get-triggers/${encodeURIComponent(user.name)}/${encodeURIComponent(user.surname)}/${encodeURIComponent(user.id)}`, {
+          const resp = await fetch(`${DATA_API_URL}/get-triggers/${encodeURIComponent(user.name)}/${encodeURIComponent(user.surname)}/${encodeURIComponent(user.id)}`, {
             headers: { 'X-User-Id': user.id }
           });
           if (resp.ok) {
@@ -165,14 +185,15 @@ export default function TriggerTracker({ onDataChange, user }) {
     setTriggerStats(stats);
   };
 
-  // --- NEW AI HANDLER ---
+  // --- AI HANDLER (To Python Backend) ---
   const handleAnalyzeLog = async (logEntry) => {
     setShowAdviceModal(true);
     setIsAnalyzing(true);
     setAiResult(null);
 
     try {
-      const response = await fetch(`${API_URL}/analyze_log`, {
+      // Note: Using AI_API_URL here
+      const response = await fetch(`${AI_API_URL}/analyze_log`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(logEntry)
@@ -190,7 +211,6 @@ export default function TriggerTracker({ onDataChange, user }) {
     }
   };
 
-  // ... (Keeping your existing handlers)
   const toggleSymptom = (symptomId) => {
     setSelectedSymptoms(prev => prev.includes(symptomId) ? prev.filter(id => id !== symptomId) : [...prev, symptomId]);
   };
@@ -205,13 +225,18 @@ export default function TriggerTracker({ onDataChange, user }) {
       return;
     }
 
+    // If light is high during logging, suggest adding "Light Sensitivity" or "Weather"
+    const autoTriggers = [...selectedTriggers];
+    // Example: If light sensor is > 80%, automatically assume light is a factor if not selected
+    // if (lightLevel > 80 && !autoTriggers.includes('weather')) autoTriggers.push('weather'); 
+
     const newLog = {
       id: Date.now(),
       date: new Date().toISOString(),
       symptoms: selectedSymptoms,
-      triggers: selectedTriggers,
+      triggers: autoTriggers, // Use the modified triggers
       severity,
-      notes,
+      notes: `${notes} (Env Light: ${lightLevel}%)`, // Auto-append light data to notes
     };
 
     const updatedLogs = [newLog, ...triggerLogs];
@@ -219,9 +244,9 @@ export default function TriggerTracker({ onDataChange, user }) {
     calculateStats(updatedLogs);
     onDataChange && onDataChange({ triggerLogs: updatedLogs });
 
-    // Saving Logic (Simplified for brevity - keeping your original logic effectively)
+    // Saving Logic
     if (user && user.name) {
-        fetch('http://localhost:3001/save-triggers', {
+        fetch(`${DATA_API_URL}/save-triggers`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-User-Id': user.id },
             body: JSON.stringify({ name: user.name, surname: user.surname, id: user.id, triggerLogs: newLog })
@@ -257,7 +282,6 @@ export default function TriggerTracker({ onDataChange, user }) {
   return (
     <div className="w-full max-w-4xl mx-auto p-4 md:p-6 relative">
       
-      {/* --- INSERT THE MODAL HERE --- */}
       <AdviceModal 
         isOpen={showAdviceModal} 
         onClose={() => setShowAdviceModal(false)} 
@@ -267,6 +291,39 @@ export default function TriggerTracker({ onDataChange, user }) {
 
       <h1 className="text-3xl md:text-4xl font-bold text-center mb-2 text-slate-100">Trigger Tracker</h1>
       <p className="text-center text-slate-400 mb-8">Log your symptoms and discover what triggers them</p>
+
+      {/* --- LIGHT SENSOR CARD --- */}
+      <div className={`rounded-xl p-6 mb-8 text-white transition-colors duration-500 border border-white/10 shadow-lg
+        ${sensorStatus === 'Disconnected' ? 'bg-slate-700' : 
+          lightLevel > 60 ? 'bg-gradient-to-r from-red-600 to-orange-600' : 'bg-gradient-to-r from-emerald-600 to-green-500'}
+      `}>
+        <div className="flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 p-3 rounded-full">
+              <Sun size={24} className="text-white" />
+            </div>
+            <div>
+              <p className="text-sm opacity-90 uppercase font-bold tracking-wider">Live Light Sensor</p>
+              {sensorStatus === 'Disconnected' ? (
+                <p className="text-xs text-slate-400">Sensor Offline (Check COM3)</p>
+              ) : (
+                <p className="text-3xl font-bold">{lightLevel}%</p>
+              )}
+            </div>
+          </div>
+
+          {sensorStatus !== 'Disconnected' && (
+            <div className="text-right">
+              <p className="text-sm font-bold opacity-80">
+                {lightLevel > 60 ? "HIGH INTENSITY" : "SAFE LEVEL"}
+              </p>
+              <p className="text-xs opacity-60">
+                {lightLevel > 60 ? "Consider dimming lights" : "Environment is optimal"}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Stats Overview */}
       {triggerLogs.length > 0 && (
@@ -416,6 +473,11 @@ export default function TriggerTracker({ onDataChange, user }) {
                     </div>
                  </div>
               </div>
+              {log.notes && (
+                <div className="mt-3 pt-3 border-t border-slate-700/50">
+                   <p className="text-slate-400 text-xs italic">{log.notes}</p>
+                </div>
+              )}
             </div>
           ))
         )}
