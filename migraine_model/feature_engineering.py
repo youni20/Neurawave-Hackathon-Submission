@@ -43,11 +43,15 @@ class FeatureEngineer:
             X_processed = X_processed.drop(columns=constant_features)
             self.removed_features.extend(constant_features)
         
-        # Remove mood_category - it's a perfect predictor derived from mood_score
+        # AGGRESSIVE: Remove mood_category - it's a perfect predictor derived from mood_score
         if 'mood_category' in X_processed.columns:
             print("Removing 'mood_category' feature (creates perfect separability - derived from mood_score)")
             X_processed = X_processed.drop(columns=['mood_category'])
             self.removed_features.append('mood_category')
+        
+        # AGGRESSIVE: Consider removing symptom features entirely if they're causing overfitting
+        # We'll keep them but add heavy noise during training instead
+        # This allows the model to learn from predictors while symptoms are heavily noised
         
         # Encode categorical features
         categorical_cols = X_processed.select_dtypes(include=['object']).columns.tolist()

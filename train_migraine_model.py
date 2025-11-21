@@ -254,18 +254,20 @@ Examples:
             if symptom_in_top3:
                 symptom_top3_importance = importance_df[importance_df['feature'].isin(symptom_in_top3)]['importance'].sum()
                 symptom_top3_pct = (symptom_top3_importance / top3_importance * 100) if top3_importance > 0 else 0
-                if symptom_top3_pct > 50:
+                # AGGRESSIVE: Stricter threshold (was 50%, now 25%)
+                if symptom_top3_pct > 25:
                     print(f"  ⚠ WARNING: Symptom features dominate top 3 ({symptom_top3_pct:.2f}% of top 3 importance)!")
                     print(f"    Symptom features in top 3: {symptom_in_top3}")
                 else:
                     print(f"  ✓ Symptom features in top 3: {symptom_top3_pct:.2f}% (acceptable)")
             
-            if top_feature_pct > 50:
-                print(f"  ⚠ WARNING: Single feature has >50% importance! Model may be overfitting.")
-            if top3_pct > 60:
-                print(f"  ⚠ WARNING: Top 3 features have >60% importance! Model may be overfitting.")
-            if num_features_used < 12:
-                print(f"  ⚠ WARNING: Only {num_features_used} features are being used! Expected: ≥12 features.")
+            # AGGRESSIVE: Stricter thresholds to match training constraints
+            if top_feature_pct > 20:  # AGGRESSIVE: Was 50%, now 20%
+                print(f"  ⚠ WARNING: Single feature has >20% importance! Model may be overfitting.")
+            if top3_pct > 35:  # AGGRESSIVE: Was 60%, now 35%
+                print(f"  ⚠ WARNING: Top 3 features have >35% importance! Model may be overfitting.")
+            if num_features_used < 15:  # AGGRESSIVE: Was 12, now 15
+                print(f"  ⚠ WARNING: Only {num_features_used} features are being used! Expected: ≥15 features.")
             else:
                 print(f"  ✓ Feature usage is healthy ({num_features_used} features with non-zero importance)")
         
