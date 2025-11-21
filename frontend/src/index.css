@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+  body {
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  body {
+    font-size: 12px;
+  }
+}
+
+/* Smooth transitions */
+@layer components {
+  .btn-responsive {
+    @apply px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-all;
+  }
+  
+  .text-responsive-lg {
+    @apply text-2xl md:text-3xl lg:text-4xl;
+  }
+  
+  .text-responsive-md {
+    @apply text-lg md:text-xl lg:text-2xl;
+  }
+  
+  .text-responsive-sm {
+    @apply text-base md:text-lg;
+  }
+}
+
+/* Navigation & icon responsiveness */
+.nav-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-block;
+}
+@media (min-width: 640px) {
+  .nav-icon { width: 22px; height: 22px; }
+}
+@media (min-width: 1024px) {
+  .nav-icon { width: 26px; height: 26px; }
+}
+
+.responsive-icon {
+  width: 22px;
+  height: 22px;
+}
+@media (min-width: 1024px) {
+  .responsive-icon { width: 28px; height: 28px; }
+}
+
+.nav-button {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.95rem;
+}
+@media (min-width: 768px) {
+  .nav-button { padding: 0.55rem 1rem; font-size: 1rem; }
+}
+
+/* Ensure icon svgs scale properly when class applied */
+.nav-icon svg, .responsive-icon svg { width: 100%; height: 100%; }

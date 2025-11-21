@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sonic Therapy</title>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            color: white;
+        }
+
+        .container {
+            background: rgba(30, 41, 59, 0.5);
+            backdrop-filter: blur(10px);
+            border-radius: 24px;
+            padding: 40px;
+            max-width: 900px;
+            width: 100%;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        h1 { font-size: 2rem; margin-bottom: 10px; font-weight: 700; text-align: center; }
+        p.subtitle { color: #94a3b8; text-align: center; margin-bottom: 40px; }
+
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+
+        .card {
+            background: rgba(255, 255, 255, 0.05); border-radius: 16px; padding: 20px;
+            border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column;
+        }
+
+        h2 { font-size: 1.2rem; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
+
+        /* Visualizer & Controls */
+        .visualizer { width: 100%; height: 80px; background: #020617; border-radius: 12px; margin-bottom: 20px; }
+        .wave-canvas { width: 100%; height: 100%; }
+        .control-group { margin-bottom: 15px; }
+        label { display: block; font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px; }
+        input[type="range"] { width: 100%; accent-color: #3b82f6; cursor: pointer; }
+
+        .btn-primary {
+            width: 100%; padding: 12px; background: #3b82f6; color: white;
+            border: none; border-radius: 10px; font-weight: 600; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            transition: background 0.3s ease; margin-top: auto;
+        }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-primary.active { background: #ef4444; }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* --- AI Prescription UI --- */
+        .stress-indicator {
+            font-size: 0.9rem; color: #94a3b8; margin-bottom: 10px; text-align: center; height: 20px;
+        }
+
+        .song-card {
+            background: rgba(0,0,0,0.3); border-radius: 12px; padding: 20px;
+            text-align: center; margin-bottom: 20px; border: 1px dashed #334155;
+            min-height: 120px; display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+
+        .song-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 5px; color: #fff; }
+        
+        .spotify-link-btn {
+            margin-top: 10px; background: #1db954; color: black; padding: 8px 16px;
+            border-radius: 20px; font-size: 0.9rem; font-weight: 600; text-decoration: none;
+            display: inline-flex; align-items: center; gap: 6px; transition: transform 0.2s;
+        }
+        .spotify-link-btn:hover { transform: scale(1.05); }
+
+        .loader {
+            width: 20px; height: 20px; border: 3px solid #fff; border-bottom-color: transparent;
+            border-radius: 50%; animation: rotation 1s linear infinite; display: none;
+        }
+        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .back-link {
+            display: block; text-align: center; margin-top: 30px; color: #64748b; text-decoration: none;
+        }
+        .back-link:hover { color: white; }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Sonic Therapy</h1>
+        <p class="subtitle">Audio-based pain management and relaxation tools.</p>
+
+        <div class="grid">
+            
+            <div class="card">
+                <h2><i data-lucide="waves"></i> Binaural Generator</h2>
+                <div class="visualizer">
+                    <canvas id="waveCanvas" class="wave-canvas"></canvas>
+                </div>
+                <div class="control-group">
+                    <label>Base Frequency: <span id="freqVal">200</span> Hz</label>
+                    <input type="range" id="freqSlider" min="100" max="400" value="200">
+                </div>
+                <div class="control-group">
+                    <label>Beat Offset: +<span id="beatVal">10</span> Hz (Alpha)</label>
+                    <input type="range" id="beatSlider" min="1" max="30" value="10">
+                </div>
+                <button id="binauralBtn" class="btn-primary" onclick="toggleBinaural()">
+                    <i data-lucide="play"></i> Start Therapy
+                </button>
+            </div>
+
+            <div class="card">
+                <h2><i data-lucide="sparkles"></i> AI Suggestions</h2>
+                
+                <div class="stress-indicator" id="stressText">Ready to analyze triggers...</div>
+
+                <div id="songContainer" class="song-card">
+                    <span style="color:#64748b">Lets find something for you</span>
+                </div>
+
+                <button id="aiBtn" class="btn-primary" style="background: #1db954; color: black;" onclick="getAiPrescription()">
+                    <span id="aiBtnText">Generate Prescription</span>
+                    <div id="loader" class="loader"></div>
+                </button>
+            </div>
+
+        </div>
+
+        <a href="index.html" class="back-link">← Back</a>
+    </div>
+
+    <script>
+        lucide.createIcons();
+        
+        // CONFIG: Update this IP if needed
+        const SERVER_URL = 'http://100.89.109.97:5000/recommend_music'; 
+
+        // --- 1. AI MUSIC LOGIC ---
+        async function getAiPrescription() {
+            const btn = document.getElementById('aiBtn');
+            const btnText = document.getElementById('aiBtnText');
+            const loader = document.getElementById('loader');
+            const container = document.getElementById('songContainer');
+            const stressText = document.getElementById('stressText');
+
+            btn.disabled = true;
+            btnText.textContent = "Analyzing...";
+            loader.style.display = 'block';
+            container.innerHTML = '<span style="color:#64748b">Finding the perfect track...</span>';
+
+            // --- GET USER DATA FROM STORAGE ---
+            let currentStress = 50; // Default fallback
+            try {
+                const savedData = localStorage.getItem('neuraflow_full_data');
+                if (savedData) {
+                    const parsed = JSON.parse(savedData);
+                    // Try to find the stress slider from the user profile
+                    if (parsed.user && parsed.user.sliders && parsed.user.sliders.stress) {
+                        currentStress = parsed.user.sliders.stress * 10; // Convert 0-10 to 0-100
+                    }
+                }
+            } catch(e) {
+                console.log("Could not read local user data, using default.");
+            }
+
+            try {
+                const res = await fetch(SERVER_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        stress_level: currentStress 
+                    }) 
+                });
+
+                const data = await res.json();
+                
+                stressText.innerHTML = `User Stress Level: <strong style="color:${data.stress_level > 50 ? '#ef4444' : '#22c55e'}">${data.stress_level}/100</strong>`;
+                
+                // Show Song Name and Button
+                container.innerHTML = `
+                    <div class="song-title">🎵 ${data.song}</div>
+                    <a href="${data.link}" target="_blank" class="spotify-link-btn">
+                        Listen on Spotify <i data-lucide="external-link" size="14"></i>
+                    </a>
+                `;
+                container.style.border = "1px solid #3b82f6";
+                lucide.createIcons(); // Re-render icons inside new HTML
+
+            } catch (e) {
+                console.error(e);
+                container.innerHTML = '<span style="color:#ef4444">Error connecting to AI.</span>';
+            } finally {
+                btn.disabled = false;
+                btnText.textContent = "Regenerate Prescription";
+                loader.style.display = 'none';
+            }
+        }
+
+        // --- 2. BINAURAL BEATS ENGINE (Unchanged) ---
+        let audioCtx, oscLeft, oscRight, gainNode, analyser;
+        let isBinauralPlaying = false;
+
+        const freqSlider = document.getElementById('freqSlider');
+        const beatSlider = document.getElementById('beatSlider');
+        
+        freqSlider.addEventListener('input', () => {
+            document.getElementById('freqVal').innerText = freqSlider.value;
+            if(isBinauralPlaying) { oscLeft.frequency.value = freqSlider.value; oscRight.frequency.value = parseInt(freqSlider.value) + parseInt(beatSlider.value); }
+        });
+        
+        beatSlider.addEventListener('input', () => {
+            document.getElementById('beatVal').innerText = beatSlider.value;
+            if(isBinauralPlaying) { oscRight.frequency.value = parseInt(freqSlider.value) + parseInt(beatSlider.value); }
+        });
+
+        function toggleBinaural() {
+            if (isBinauralPlaying) stopBinaural();
+            else startBinaural();
+        }
+
+        function startBinaural() {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (!audioCtx) audioCtx = new AC();
+
+            gainNode = audioCtx.createGain();
+            analyser = audioCtx.createAnalyser();
+            oscLeft = audioCtx.createOscillator();
+            oscRight = audioCtx.createOscillator();
+            
+            const panL = audioCtx.createStereoPanner(); panL.pan.value = -1;
+            const panR = audioCtx.createStereoPanner(); panR.pan.value = 1;
+
+            const base = parseInt(freqSlider.value);
+            const beat = parseInt(beatSlider.value);
+            oscLeft.type = 'sine'; oscLeft.frequency.value = base;
+            oscRight.type = 'sine'; oscRight.frequency.value = base + beat;
+
+            oscLeft.connect(panL).connect(gainNode);
+            oscRight.connect(panR).connect(gainNode);
+            gainNode.connect(analyser);
+            analyser.connect(audioCtx.destination);
+
+            gainNode.gain.value = 0;
+            oscLeft.start(); oscRight.start();
+            gainNode.gain.linearRampToValueAtTime(0.3, audioCtx.currentTime + 1); 
+
+            isBinauralPlaying = true;
+            drawVisualizer();
+            updateBinauralUI(true);
+        }
+
+        function stopBinaural() {
+            gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5);
+            setTimeout(() => {
+                oscLeft.stop(); oscRight.stop();
+                isBinauralPlaying = false;
+                updateBinauralUI(false);
+            }, 500);
+        }
+
+        function updateBinauralUI(active) {
+            const btn = document.getElementById('binauralBtn');
+            if (active) {
+                btn.classList.add('active');
+                btn.innerHTML = '<i data-lucide="square"></i> Stop Therapy';
+            } else {
+                btn.classList.remove('active');
+                btn.innerHTML = '<i data-lucide="play"></i> Start Therapy';
+            }
+            lucide.createIcons();
+        }
+
+        function drawVisualizer() {
+            if (!isBinauralPlaying) return;
+            requestAnimationFrame(drawVisualizer);
+            const canvas = document.getElementById('waveCanvas');
+            const ctx = canvas.getContext('2d');
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteTimeDomainData(dataArray);
+
+            ctx.fillStyle = '#020617'; 
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#3b82f6';
+            ctx.beginPath();
+
+            const sliceWidth = canvas.width * 1.0 / bufferLength;
+            let x = 0;
+            for(let i = 0; i < bufferLength; i++) {
+                const v = dataArray[i] / 128.0;
+                const y = v * canvas.height/2;
+                if(i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                x += sliceWidth;
+            }
+            ctx.lineTo(canvas.width, canvas.height/2);
+            ctx.stroke();
+        }
+    </script>
+</body>
+</html>
