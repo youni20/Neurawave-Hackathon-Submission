@@ -72,25 +72,28 @@ def optimize_hyperparameters(
             'random_state': random_state,
             'n_jobs': -1,
             'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.05, log=True),  # Even more reduced: 0.05 max
-            'max_depth': trial.suggest_int('max_depth', 2, 3),  # Even lower: 2-3 only
-            'min_child_weight': trial.suggest_int('min_child_weight', 10, 30),  # Much higher: 10-30
+            'max_depth': trial.suggest_int('max_depth', 2, 2),  # Only depth 2 to prevent overfitting
+            'min_child_weight': trial.suggest_int('min_child_weight', 15, 50),  # Higher: 15-50
             'subsample': trial.suggest_float('subsample', 0.5, 0.8),  # Lower: 0.5-0.8
-            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 0.8),  # Lower: 0.5-0.8
-            'reg_alpha': trial.suggest_float('reg_alpha', 10, 50),  # Much higher: 10-50
-            'reg_lambda': trial.suggest_float('reg_lambda', 10, 50),  # Much higher: 10-50
-            'gamma': trial.suggest_float('gamma', 2, 15),  # Higher: 2-15
+            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.4, 0.6),  # Lower bounds: 0.4-0.6 for feature dropout
+            'reg_alpha': trial.suggest_float('reg_alpha', 20, 100),  # Much higher: 20-100
+            'reg_lambda': trial.suggest_float('reg_lambda', 20, 100),  # Much higher: 20-100
+            'gamma': trial.suggest_float('gamma', 5, 20),  # Higher: 5-20
             'scale_pos_weight': scale_pos_weight,
         }
         
         # Add noise to training data to break perfect separability
         X_train_noisy = X_train.copy()
-        noise_scale = 0.05  # Increased from 0.01 to 0.05 for stronger regularization
+        # Higher noise for mood_score to break perfect correlation
+        base_noise_scale = 0.12  # Increased from 0.05 to 0.12
         # Use trial number to vary noise across trials
         np.random.seed(trial_seed)
         for col in X_train_noisy.columns:
             if X_train_noisy[col].dtype in [np.float64, np.int64]:
                 col_std = X_train_noisy[col].std()
                 if col_std > 0:
+                    # Apply higher noise to mood_score specifically
+                    noise_scale = base_noise_scale * 1.5 if 'mood_score' in col.lower() else base_noise_scale
                     noise = np.random.normal(0, noise_scale * col_std, size=len(X_train_noisy))
                     X_train_noisy[col] = X_train_noisy[col] + noise
         
@@ -104,7 +107,7 @@ def optimize_hyperparameters(
             dtrain,
             num_boost_round=100,  # Much reduced: 100 instead of 200
             evals=[(dtrain, 'train'), (dval, 'val')],
-            early_stopping_rounds=20,  # Very aggressive early stopping
+            early_stopping_rounds=10,  # More aggressive early stopping
             verbose_eval=False
         )
         
@@ -172,12 +175,14 @@ def train_final_model(
     # Add noise to training data to break perfect separability
     print("Adding noise to training data to prevent overfitting...")
     X_train_noisy = X_train.copy()
-    noise_scale = 0.05  # Increased from 0.01 to 0.05 for stronger regularization
+    base_noise_scale = 0.12  # Increased from 0.05 to 0.12
     np.random.seed(42)  # For reproducibility
     for col in X_train_noisy.columns:
         if X_train_noisy[col].dtype in [np.float64, np.int64]:
             col_std = X_train_noisy[col].std()
             if col_std > 0:
+                # Apply higher noise to mood_score specifically
+                noise_scale = base_noise_scale * 1.5 if 'mood_score' in col.lower() else base_noise_scale
                 noise = np.random.normal(0, noise_scale * col_std, size=len(X_train_noisy))
                 X_train_noisy[col] = X_train_noisy[col] + noise
     
@@ -192,7 +197,7 @@ def train_final_model(
         dtrain,
         num_boost_round=min(n_estimators, 100),  # Much lower cap: 100 instead of 200
         evals=[(dtrain, 'train'), (dval, 'val')],
-        early_stopping_rounds=20,  # Very aggressive early stopping
+        early_stopping_rounds=10,  # More aggressive early stopping
         verbose_eval=25
     )
     
