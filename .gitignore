@@ -1,3 +1,26 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Testing/Debug
+coverage
+.DS_Store
+
+# Production
+dist
+build
+
+# Environment variables
+.env
+.env.local
+
+# User Data (Don't push your local test files)
+userdata/
+*.json
+!package.json
+!vite.config.js
+!jsconfig.json
 synthetic_data_100_000/
 synthetic_data_10_000/
 cleaned_data/
@@ -5,3 +28,10 @@ cleaned_data/
 __pycache__/
 *.csv
 node_modules
+
+synthetic_data_100_000/
+synthetic_data_10_000/
+cleaned_data/
+.venv/
+__pycache__/
+*.csv
