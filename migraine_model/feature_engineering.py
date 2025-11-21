@@ -43,11 +43,15 @@ class FeatureEngineer:
             X_processed = X_processed.drop(columns=constant_features)
             self.removed_features.extend(constant_features)
         
-        # Remove mood_category - it's a perfect predictor derived from mood_score
+        # AGGRESSIVE: Remove mood_category - it's a perfect predictor derived from mood_score
         if 'mood_category' in X_processed.columns:
             print("Removing 'mood_category' feature (creates perfect separability - derived from mood_score)")
             X_processed = X_processed.drop(columns=['mood_category'])
             self.removed_features.append('mood_category')
+        
+        # AGGRESSIVE: Consider removing symptom features entirely if they're causing overfitting
+        # We'll keep them but add heavy noise during training instead
+        # This allows the model to learn from predictors while symptoms are heavily noised
         
         # Encode categorical features
         categorical_cols = X_processed.select_dtypes(include=['object']).columns.tolist()
@@ -79,42 +83,52 @@ class FeatureEngineer:
                 if min_val < 0 or max_val > 1:
                     print(f"⚠ Warning: {col} is outside [0,1] range: [{min_val:.4f}, {max_val:.4f}]")
         
-        # Bin mood_score to reduce separability (wider bins)
-        if 'mood_score' in X_processed.columns:
-            # Create wider bins: 0-4, 4-7, 7-10
-            X_processed['mood_score_binned'] = pd.cut(
-                X_processed['mood_score'],
-                bins=[-np.inf, 4, 7, np.inf],
-                labels=[0, 1, 2]
-            ).astype(float)
-            print("Created mood_score_binned feature (wider bins to reduce separability)")
+        # PHASE 0: Remove mood_score_binned - it creates perfect separability
+        # Do NOT create mood_score_binned - it's a derived feature that amplifies symptom signal
         
-        # Create feature interactions to force multi-feature usage
-        if 'mood_score' in X_processed.columns and 'step_count_normalized' in X_processed.columns:
-            # Interaction feature: mood * step_count
-            X_processed['mood_step_interaction'] = (
-                X_processed['mood_score'] * X_processed['step_count_normalized']
-            )
-            print("Created mood_step_interaction feature (mood_score * step_count_normalized)")
-            
-            # Ratio feature: step_count / (mood_score + 1)
-            X_processed['step_mood_ratio'] = (
-                X_processed['step_count_normalized'] / (X_processed['mood_score'] + 1)
-            )
-            print("Created step_mood_ratio feature (step_count_normalized / (mood_score + 1))")
+        # PHASE 0: Remove symptom-based interactions - they amplify symptom signal
+        # Instead, create predictor-based interactions (see below)
         
-        # Create interaction with screen brightness if available
-        if 'mood_score' in X_processed.columns and 'screen_brightness_normalized' in X_processed.columns:
-            X_processed['mood_brightness_interaction'] = (
-                X_processed['mood_score'] * X_processed['screen_brightness_normalized']
-            )
-            print("Created mood_brightness_interaction feature")
+        # Create PREDICTOR-based interaction features (not symptom-based)
+        # These help the model use logical predictor features
+        # PHASE 3: Normalize all interactions to prevent dominance
+        if 'stress_intensity' in X_processed.columns and 'sleep' in X_processed.columns:
+            # Normalize before interaction
+            stress_norm = (X_processed['stress_intensity'] - X_processed['stress_intensity'].mean()) / (X_processed['stress_intensity'].std() + 1e-8)
+            sleep_norm = (X_processed['sleep'] - X_processed['sleep'].mean()) / (X_processed['sleep'].std() + 1e-8)
+            X_processed['stress_sleep_interaction'] = stress_norm * sleep_norm
+            print("Created stress_sleep_interaction feature (normalized: stress_intensity × sleep)")
         
-        if 'step_count_normalized' in X_processed.columns and 'screen_brightness_normalized' in X_processed.columns:
-            X_processed['step_brightness_interaction'] = (
-                X_processed['step_count_normalized'] * X_processed['screen_brightness_normalized']
-            )
-            print("Created step_brightness_interaction feature")
+        if 'weather' in X_processed.columns and 'pressure_mean' in X_processed.columns:
+            # Normalize pressure deviation for interaction
+            pressure_mean = X_processed['pressure_mean'].mean()
+            pressure_deviation = abs(X_processed['pressure_mean'] - pressure_mean) / 20.0
+            weather_norm = (X_processed['weather'] - X_processed['weather'].mean()) / (X_processed['weather'].std() + 1e-8)
+            pressure_dev_norm = (pressure_deviation - pressure_deviation.mean()) / (pressure_deviation.std() + 1e-8)
+            X_processed['weather_pressure_interaction'] = weather_norm * pressure_dev_norm
+            print("Created weather_pressure_interaction feature (normalized: weather × pressure_deviation)")
+        
+        if 'stress_intensity' in X_processed.columns:
+            # Aggregate trigger features if available
+            trigger_cols = ['stress', 'hormonal', 'sleep', 'weather', 'food', 'sensory', 'physical']
+            available_triggers = [col for col in trigger_cols if col in X_processed.columns]
+            if available_triggers:
+                trigger_aggregate = X_processed[available_triggers].sum(axis=1)
+                # Normalize aggregate
+                trigger_agg_norm = (trigger_aggregate - trigger_aggregate.mean()) / (trigger_aggregate.std() + 1e-8)
+                X_processed['trigger_aggregate'] = trigger_agg_norm
+                
+                # Normalize stress for interaction
+                stress_norm = (X_processed['stress_intensity'] - X_processed['stress_intensity'].mean()) / (X_processed['stress_intensity'].std() + 1e-8)
+                X_processed['stress_trigger_interaction'] = stress_norm * trigger_agg_norm
+                print(f"Created trigger_aggregate and stress_trigger_interaction features (normalized)")
+        
+        if 'pressure_mean' in X_processed.columns and 'temp_mean' in X_processed.columns:
+            # Normalize for interaction
+            pressure_norm = (X_processed['pressure_mean'] - X_processed['pressure_mean'].mean()) / (X_processed['pressure_mean'].std() + 1e-8)
+            temp_norm = (X_processed['temp_mean'] - X_processed['temp_mean'].mean()) / (X_processed['temp_mean'].std() + 1e-8)
+            X_processed['pressure_temp_interaction'] = pressure_norm * temp_norm
+            print("Created pressure_temp_interaction feature (normalized: pressure_mean × temp_mean)")
         
         # Ensure all features are numeric
         non_numeric = X_processed.select_dtypes(exclude=[np.number]).columns.tolist()
@@ -129,8 +143,35 @@ class FeatureEngineer:
         
         self.feature_names = X_processed.columns.tolist()
         
+        # PHASE 3: Track feature groups for balancing
+        predictor_features = [col for col in self.feature_names if col in [
+            'stress_intensity', 'temp_mean', 'wind_mean', 'pressure_mean',
+            'sun_irr_mean', 'sun_time_mean', 'precip_total', 'cloud_mean',
+            'stress', 'hormonal', 'sleep', 'weather', 'food', 'sensory', 'physical'
+        ]]
+        temporal_features = [col for col in self.feature_names if col in [
+            'consecutive_migraine_days', 'days_since_last_migraine'
+        ]]
+        symptom_features = [col for col in self.feature_names if any(symptom in col.lower() for symptom in [
+            'mood_score', 'step_count', 'screen_brightness'
+        ])]
+        interaction_features = [col for col in self.feature_names if 'interaction' in col.lower() or 'aggregate' in col.lower()]
+        
+        self.feature_groups = {
+            'predictor': predictor_features,
+            'temporal': temporal_features,
+            'symptom': symptom_features,
+            'interaction': interaction_features,
+            'other': [col for col in self.feature_names if col not in 
+                predictor_features + temporal_features + symptom_features + interaction_features]
+        }
+        
         print(f"\nFinal feature count: {len(self.feature_names)}")
         print(f"Removed features: {self.removed_features}")
+        print(f"\nFeature Groups:")
+        for group_name, group_features in self.feature_groups.items():
+            if group_features:
+                print(f"  {group_name.capitalize()}: {len(group_features)} features")
         
         return X_processed
     
@@ -168,31 +209,35 @@ class FeatureEngineer:
         for col in bool_cols:
             X_processed[col] = X_processed[col].astype(int)
         
-        # Recreate feature interactions (same as fit_transform)
-        if 'mood_score' in X_processed.columns:
-            X_processed['mood_score_binned'] = pd.cut(
-                X_processed['mood_score'],
-                bins=[-np.inf, 4, 7, np.inf],
-                labels=[0, 1, 2]
-            ).astype(float)
+        # PHASE 0: Do NOT recreate mood_score_binned or symptom interactions
+        # PHASE 3: Recreate predictor-based interactions with normalization (same as fit_transform)
+        if 'stress_intensity' in X_processed.columns and 'sleep' in X_processed.columns:
+            stress_norm = (X_processed['stress_intensity'] - X_processed['stress_intensity'].mean()) / (X_processed['stress_intensity'].std() + 1e-8)
+            sleep_norm = (X_processed['sleep'] - X_processed['sleep'].mean()) / (X_processed['sleep'].std() + 1e-8)
+            X_processed['stress_sleep_interaction'] = stress_norm * sleep_norm
         
-        if 'mood_score' in X_processed.columns and 'step_count_normalized' in X_processed.columns:
-            X_processed['mood_step_interaction'] = (
-                X_processed['mood_score'] * X_processed['step_count_normalized']
-            )
-            X_processed['step_mood_ratio'] = (
-                X_processed['step_count_normalized'] / (X_processed['mood_score'] + 1)
-            )
+        if 'weather' in X_processed.columns and 'pressure_mean' in X_processed.columns:
+            pressure_mean = X_processed['pressure_mean'].mean()
+            pressure_deviation = abs(X_processed['pressure_mean'] - pressure_mean) / 20.0
+            weather_norm = (X_processed['weather'] - X_processed['weather'].mean()) / (X_processed['weather'].std() + 1e-8)
+            pressure_dev_norm = (pressure_deviation - pressure_deviation.mean()) / (pressure_deviation.std() + 1e-8)
+            X_processed['weather_pressure_interaction'] = weather_norm * pressure_dev_norm
         
-        if 'mood_score' in X_processed.columns and 'screen_brightness_normalized' in X_processed.columns:
-            X_processed['mood_brightness_interaction'] = (
-                X_processed['mood_score'] * X_processed['screen_brightness_normalized']
-            )
+        if 'stress_intensity' in X_processed.columns:
+            trigger_cols = ['stress', 'hormonal', 'sleep', 'weather', 'food', 'sensory', 'physical']
+            available_triggers = [col for col in trigger_cols if col in X_processed.columns]
+            if available_triggers:
+                trigger_aggregate = X_processed[available_triggers].sum(axis=1)
+                trigger_agg_norm = (trigger_aggregate - trigger_aggregate.mean()) / (trigger_aggregate.std() + 1e-8)
+                X_processed['trigger_aggregate'] = trigger_agg_norm
+                
+                stress_norm = (X_processed['stress_intensity'] - X_processed['stress_intensity'].mean()) / (X_processed['stress_intensity'].std() + 1e-8)
+                X_processed['stress_trigger_interaction'] = stress_norm * trigger_agg_norm
         
-        if 'step_count_normalized' in X_processed.columns and 'screen_brightness_normalized' in X_processed.columns:
-            X_processed['step_brightness_interaction'] = (
-                X_processed['step_count_normalized'] * X_processed['screen_brightness_normalized']
-            )
+        if 'pressure_mean' in X_processed.columns and 'temp_mean' in X_processed.columns:
+            pressure_norm = (X_processed['pressure_mean'] - X_processed['pressure_mean'].mean()) / (X_processed['pressure_mean'].std() + 1e-8)
+            temp_norm = (X_processed['temp_mean'] - X_processed['temp_mean'].mean()) / (X_processed['temp_mean'].std() + 1e-8)
+            X_processed['pressure_temp_interaction'] = pressure_norm * temp_norm
         
         # Ensure same feature order - only select features that exist
         available_features = [f for f in self.feature_names if f in X_processed.columns]
@@ -206,4 +251,8 @@ class FeatureEngineer:
     def get_feature_names(self) -> List[str]:
         """Get list of feature names after transformation."""
         return self.feature_names.copy()
+    
+    def get_feature_groups(self) -> Dict[str, List[str]]:
+        """Get feature groups for balancing analysis."""
+        return self.feature_groups.copy() if hasattr(self, 'feature_groups') else {}
 

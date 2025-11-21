@@ -2,6 +2,7 @@
 
 # Migraine Prediction Model Training Script
 # This script trains the XGBoost model with all necessary steps
+# Designed for cloud environments - assumes data files are already prepared
 
 set -e  # Exit on error
 
@@ -55,21 +56,67 @@ else
 fi
 echo ""
 
-# Step 3: Check input data file
-echo -e "${YELLOW}[3/5] Checking input data file...${NC}"
-if [ ! -f "$INPUT_FILE" ]; then
-    echo -e "${RED}Error: Input file '$INPUT_FILE' not found${NC}"
+# Step 3: Check for data files (distribution shift or single file)
+echo -e "${YELLOW}[3/5] Checking data files...${NC}"
+
+# Check if split data files exist (distribution shift mode)
+TRAIN_FILE="train_data.csv"
+VAL_FILE="val_data.csv"
+TEST_FILE="test_data.csv"
+USE_DISTRIBUTION_SHIFT=false
+
+if [ -f "$TRAIN_FILE" ] && [ -f "$VAL_FILE" ] && [ -f "$TEST_FILE" ]; then
+    echo -e "${BLUE}  Found split data files (train/val/test)${NC}"
+    echo -e "${BLUE}  Using distribution shift mode${NC}"
+    USE_DISTRIBUTION_SHIFT=true
+    
+    # Verify files are not empty
+    for file in "$TRAIN_FILE" "$VAL_FILE" "$TEST_FILE"; do
+        if [ ! -s "$file" ]; then
+            echo -e "${RED}Error: $file is empty${NC}"
+            exit 1
+        fi
+    done
+    
+    # Check for temporal features
+    if ! head -1 "$TRAIN_FILE" | grep -q "consecutive_migraine_days"; then
+        echo -e "${YELLOW}  ⚠ Warning: Split files may be missing temporal features${NC}"
+    fi
+    
+    TRAIN_ROWS=$(wc -l < "$TRAIN_FILE" | tr -d ' ')
+    VAL_ROWS=$(wc -l < "$VAL_FILE" | tr -d ' ')
+    TEST_ROWS=$(wc -l < "$TEST_FILE" | tr -d ' ')
+    echo -e "${GREEN}  ✓ Train: $TRAIN_ROWS lines${NC}"
+    echo -e "${GREEN}  ✓ Val:   $VAL_ROWS lines${NC}"
+    echo -e "${GREEN}  ✓ Test:  $TEST_ROWS lines${NC}"
+    echo -e "${BLUE}  Note: Val/Test use different distribution parameters to detect overfitting${NC}"
+elif [ -f "$INPUT_FILE" ]; then
+    echo -e "${BLUE}  Found single data file: $INPUT_FILE${NC}"
+    echo -e "${YELLOW}  Using standard mode (no distribution shift)${NC}"
+    
+    # Check file is not empty
+    if [ ! -s "$INPUT_FILE" ]; then
+        echo -e "${RED}Error: Input file '$INPUT_FILE' is empty${NC}"
+        exit 1
+    fi
+    
+    # Verify data has required features
+    if ! head -1 "$INPUT_FILE" | grep -q "consecutive_migraine_days"; then
+        echo -e "${YELLOW}  ⚠ Warning: $INPUT_FILE may be missing temporal features${NC}"
+        echo -e "${YELLOW}  Expected: consecutive_migraine_days, days_since_last_migraine${NC}"
+    fi
+    
+    ROW_COUNT=$(wc -l < "$INPUT_FILE" | tr -d ' ')
+    echo -e "${GREEN}  ✓ Found input file: $INPUT_FILE ($ROW_COUNT lines)${NC}"
+else
+    echo -e "${RED}Error: No data files found${NC}"
+    echo -e "${YELLOW}Expected either:${NC}"
+    echo -e "${YELLOW}  - Split files: $TRAIN_FILE, $VAL_FILE, $TEST_FILE (with distribution shift)${NC}"
+    echo -e "${YELLOW}  - Single file: $INPUT_FILE (standard mode)${NC}"
+    echo -e "${YELLOW}Note: Data generation scripts are not available in cloud environment${NC}"
+    echo -e "${YELLOW}Please ensure data files are uploaded before training${NC}"
     exit 1
 fi
-
-# Check file is not empty
-if [ ! -s "$INPUT_FILE" ]; then
-    echo -e "${RED}Error: Input file '$INPUT_FILE' is empty${NC}"
-    exit 1
-fi
-
-ROW_COUNT=$(wc -l < "$INPUT_FILE" | tr -d ' ')
-echo -e "${GREEN}✓ Found input file: $INPUT_FILE ($ROW_COUNT lines)${NC}"
 echo ""
 
 # Step 4: Create output directory
@@ -81,17 +128,38 @@ echo ""
 # Step 5: Train the model
 echo -e "${YELLOW}[5/5] Training XGBoost model...${NC}"
 echo -e "${BLUE}Configuration:${NC}"
-echo -e "  Input file: $INPUT_FILE"
+if [ "$USE_DISTRIBUTION_SHIFT" = true ]; then
+    echo -e "  Train file: $TRAIN_FILE"
+    echo -e "  Val file:   $VAL_FILE"
+    echo -e "  Test file:  $TEST_FILE"
+    echo -e "  Mode: Distribution shift (val/test from different distribution)"
+else
+    echo -e "  Input file: $INPUT_FILE"
+    echo -e "  Mode: Standard (random split from same distribution)"
+fi
 echo -e "  Output directory: $OUTPUT_DIR"
 echo -e "  Hyperparameter trials: $TRIALS"
 echo -e "  Random state: $RANDOM_STATE"
 echo ""
 
-python train_migraine_model.py \
-    --input "$INPUT_FILE" \
-    --output "$OUTPUT_DIR" \
-    --trials "$TRIALS" \
-    --random-state "$RANDOM_STATE"
+if [ "$USE_DISTRIBUTION_SHIFT" = true ]; then
+    # Train with distribution shift
+    python train_migraine_model.py \
+        --use-distribution-shift \
+        --train-file "$TRAIN_FILE" \
+        --val-file "$VAL_FILE" \
+        --test-file "$TEST_FILE" \
+        --output "$OUTPUT_DIR" \
+        --trials "$TRIALS" \
+        --random-state "$RANDOM_STATE"
+else
+    # Train with single file (standard mode)
+    python train_migraine_model.py \
+        --input "$INPUT_FILE" \
+        --output "$OUTPUT_DIR" \
+        --trials "$TRIALS" \
+        --random-state "$RANDOM_STATE"
+fi
 
 TRAIN_EXIT_CODE=$?
 
@@ -127,4 +195,3 @@ else
     echo -e "${RED}========================================${NC}"
     exit $TRAIN_EXIT_CODE
 fi
-
