@@ -76,7 +76,7 @@ def optimize_hyperparameters(
             'min_child_weight': trial.suggest_int('min_child_weight', 100, 200),  # AGGRESSIVE: Much higher: 100-200
             'subsample': trial.suggest_float('subsample', 0.4, 0.6),  # AGGRESSIVE: Lower: 0.4-0.6
             'colsample_bytree': trial.suggest_float('colsample_bytree', 0.2, 0.35),  # AGGRESSIVE: Much lower: 0.2-0.35
-            'reg_alpha': trial.suggest_float('reg_alpha', 200, 400),  # AGGRESSIVE: Much higher: 200-400
+            'reg_alpha': trial.suggest_float('reg_alpha', 400, 600),  # AGGRESSIVE: Much higher: 200-400
             'reg_lambda': trial.suggest_float('reg_lambda', 200, 400),  # AGGRESSIVE: Much higher: 200-400
             'gamma': trial.suggest_float('gamma', 20, 50),  # AGGRESSIVE: Much higher: 20-50
             'scale_pos_weight': scale_pos_weight,
@@ -126,12 +126,12 @@ def optimize_hyperparameters(
                     
                     # REALISTIC: Relaxed constraints (was too strict, rejecting all trials)
                     # Reject if top 3 features > 60% of total importance
-                    if top3_pct > 0.45:
+                    if top3_pct > 0.60:
                         return float('inf')  # Reject this trial
                     
                     # REALISTIC: Reject if top feature > 40% of total importance
                     top1_pct = sorted_importance[0] / total_importance if total_importance > 0 else 0
-                    if top1_pct > 0.30:
+                    if top1_pct > 0.50:
                         return float('inf')  # Reject this trial
                     
                     # Count features with non-zero importance
@@ -179,7 +179,7 @@ def optimize_hyperparameters(
                             
                             # REALISTIC: Reject if symptom features > 50% of top 3 (was 15%, too strict)
                             # We can't completely eliminate symptom features, but we can limit their dominance
-                            if symptom_top3_pct > 0.40:
+                            if symptom_top3_pct > 0.50:
                                 return float('inf')  # Reject this trial
         
         # Get best score
