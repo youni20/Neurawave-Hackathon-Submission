@@ -1,0 +1,25 @@
+{
+  "gender": "female",
+  "migraine_days_per_month": 5,
+  "stress_intensity": 3,
+  "temp_mean": 15.5,
+  "wind_mean": 10.2,
+  "pressure_mean": 1012.5,
+  "sun_irr_mean": 200.0,
+  "sun_time_mean": 8.5,
+  "precip_total": 0.0,
+  "cloud_mean": 30.0,
+  "step_count_normalized": 0.65,
+  "mood_score": 6.5,
+  "screen_brightness_normalized": 0.7,
+  "stress": 0.6,
+  "hormonal": 0.4,
+  "sleep": 0.5,
+  "weather": 0.3,
+  "food": 0.2,
+  "sensory": 0.1,
+  "physical": 0.2,
+  "consecutive_migraine_days": 0,
+  "days_since_last_migraine": 5
+}
+

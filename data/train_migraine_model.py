@@ -7,6 +7,7 @@ Orchestrates all modules to train a bulletproof XGBoost model.
 import argparse
 import sys
 from pathlib import Path
+from typing import Dict, List, Optional
 import pandas as pd
 import numpy as np
 
@@ -14,8 +15,83 @@ from migraine_model.data_loader import load_data, validate_data, prepare_target
 from migraine_model.feature_engineering import FeatureEngineer
 from migraine_model.data_split import stratified_split
 from migraine_model.train_xgboost import optimize_hyperparameters, train_final_model, get_feature_importance
-from migraine_model.evaluate_model import evaluate_model, plot_roc_curve, plot_calibration_curve, plot_feature_importance
+from migraine_model.evaluate_model import (
+    evaluate_model,
+    evaluate_probabilities,
+    plot_roc_curve,
+    plot_calibration_curve,
+    plot_feature_importance
+)
 from migraine_model.save_model import save_model, save_evaluation_report
+
+
+def _deduplicate_columns(columns):
+    seen = set()
+    ordered = []
+    for col in columns:
+        if col not in seen:
+            ordered.append(col)
+            seen.add(col)
+    return ordered
+
+
+def build_feature_bagging_subsets(feature_groups: Dict[str, list]) -> List[Dict]:
+    """Create complementary feature subsets for bagged ensemble training."""
+    predictor = feature_groups.get('predictor', [])
+    temporal = feature_groups.get('temporal', [])
+    symptom = feature_groups.get('symptom', [])
+    interaction = feature_groups.get('interaction', [])
+    normalized_symptoms = [col for col in symptom if 'normalized' in col or 'trend' in col]
+    
+    subset_specs = [
+        ('predictor_core', predictor),
+        ('predictor_temporal', predictor + temporal),
+        ('predictor_temporal_interaction', predictor + temporal + interaction),
+        ('predictor_temporal_symptomlite', predictor + temporal + normalized_symptoms),
+    ]
+    
+    all_columns = predictor + temporal + symptom + interaction + feature_groups.get('other', [])
+    
+    subsets = []
+    for name, cols in subset_specs:
+        deduped = [c for c in _deduplicate_columns(cols) if c in all_columns]
+        if len(deduped) >= 5:
+            subsets.append({'name': name, 'columns': deduped, 'weight': 1.0})
+    return subsets
+
+
+def aggregate_feature_importance(components: List[Dict]) -> pd.DataFrame:
+    """Aggregate feature importance across all ensemble components."""
+    combined: Dict[str, float] = {}
+    for comp in components:
+        importance_df = comp.get('importance_df')
+        weight = comp.get('weight', 1.0)
+        if importance_df is None:
+            continue
+        for _, row in importance_df.iterrows():
+            combined[row['feature']] = combined.get(row['feature'], 0.0) + row['importance'] * weight
+    df = pd.DataFrame([
+        {'feature': feature, 'importance': importance}
+        for feature, importance in combined.items()
+    ])
+    if not df.empty:
+        df = df.sort_values('importance', ascending=False)
+    return df
+
+
+def build_subset_penalty_config(base_config: Optional[Dict], subset_columns: List[str]) -> Optional[Dict]:
+    """Restrict symptom-importance penalty to the subset's available columns."""
+    if not base_config:
+        return None
+    subset_features = [
+        col for col in base_config.get('features', [])
+        if col in subset_columns
+    ]
+    if not subset_features:
+        return None
+    new_config = base_config.copy()
+    new_config['features'] = subset_features
+    return new_config
 
 
 def main():
@@ -59,6 +135,40 @@ Examples:
         type=int,
         default=42,
         help='Random seed for reproducibility (default: 42)'
+    )
+    
+    parser.add_argument(
+        '--symptom-scaling',
+        choices=['none', 'tanh', 'sigmoid'],
+        default='tanh',
+        help='Apply non-linear squashing to symptom features before training (default: tanh)'
+    )
+    
+    parser.add_argument(
+        '--symptom-temperature',
+        type=float,
+        default=1.5,
+        help='Temperature parameter for symptom scaling (higher = flatter, default: 1.5)'
+    )
+    
+    parser.add_argument(
+        '--symptom-importance-threshold',
+        type=float,
+        default=0.45,
+        help='Maximum allowed symptom importance share before penalties apply (default: 0.45)'
+    )
+    
+    parser.add_argument(
+        '--symptom-importance-penalty',
+        type=float,
+        default=5.0,
+        help='Penalty weight applied to trials exceeding symptom dominance (default: 5.0)'
+    )
+    
+    parser.add_argument(
+        '--feature-bagging',
+        action='store_true',
+        help='Enable feature-bagged ensemble (predictor/temporal/symptom subsets)'
     )
     
     parser.add_argument(
@@ -158,7 +268,10 @@ Examples:
             print("\n" + "=" * 80)
             print("FEATURE ENGINEERING")
             print("=" * 80)
-            feature_engineer = FeatureEngineer()
+            feature_engineer = FeatureEngineer(
+                symptom_scaling=args.symptom_scaling,
+                symptom_temperature=args.symptom_temperature
+            )
             X_train = feature_engineer.fit_transform(X_train_raw)
             X_val = feature_engineer.transform(X_val_raw)
             X_test = feature_engineer.transform(X_test_raw)
@@ -181,7 +294,10 @@ Examples:
             print("\n" + "=" * 80)
             print("FEATURE ENGINEERING")
             print("=" * 80)
-            feature_engineer = FeatureEngineer()
+            feature_engineer = FeatureEngineer(
+                symptom_scaling=args.symptom_scaling,
+                symptom_temperature=args.symptom_temperature
+            )
             X_processed = feature_engineer.fit_transform(X)
             
             # 4. Data splitting
@@ -192,28 +308,6 @@ Examples:
                 random_state=args.random_state
             )
         
-        # 5. Hyperparameter optimization
-        best_params = optimize_hyperparameters(
-            X_train, y_train,
-            X_val, y_val,
-            n_trials=args.trials,
-            random_state=args.random_state
-        )
-        
-        # 6. Train final model
-        model = train_final_model(
-            X_train, y_train,
-            X_val, y_val,
-            best_params,
-            n_estimators=200  # Much reduced: 200 to prevent overfitting
-        )
-        
-        # 7. Get feature importance
-        feature_names = feature_engineer.get_feature_names()
-        importance_df = get_feature_importance(model, feature_names)
-        
-        print("\nTop 10 Most Important Features:")
-        print(importance_df.head(10).to_string(index=False))
         
         # Feature importance validation
         total_importance = importance_df['importance'].sum()

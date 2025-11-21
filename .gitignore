@@ -56,4 +56,3 @@ synthetic_data_10_000/
 cleaned_data/
 .venv/
 __pycache__/
-*.csv
