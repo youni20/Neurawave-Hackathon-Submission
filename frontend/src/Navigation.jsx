@@ -30,16 +30,31 @@ export default function Navigation({ currentPage, setCurrentPage }) {
             <button
               key={item.id}
               onClick={() => {
+                // For static standalone pages, navigate directly to HTML files
+                if (item.id === 'doctor') {
+                  window.location.href = '/doctor.html';
+                  return;
+                }
+                if (item.id === 'music') {
+                  window.location.href = '/music.html';
+                  return;
+                }
+
+                // Default: internal SPA routing
                 setCurrentPage(item.id);
                 setMobileMenuOpen(false);
               }}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all ${
+              className={`nav-button flex items-center gap-2 rounded-lg font-semibold transition-all ${
                 currentPage === item.id
                   ? 'bg-blue-500 text-white shadow-lg'
                   : 'bg-slate-700 text-gray-200 hover:bg-slate-600'
               }`}
             >
-              {IconComponent ? <IconComponent size={20} /> : item.icon}
+              {IconComponent ? (
+                <IconComponent className="nav-icon" />
+              ) : (
+                <span className="nav-icon inline-flex items-center justify-center">{item.icon}</span>
+              )}
               <span className="hidden sm:inline">{item.label}</span>
             </button>
           );
@@ -55,16 +70,26 @@ export default function Navigation({ currentPage, setCurrentPage }) {
               <button
                 key={item.id}
                 onClick={() => {
+                  // Directly open standalone pages for doctor/music
+                  if (item.id === 'doctor') {
+                    window.location.href = '/doctor.html';
+                    return;
+                  }
+                  if (item.id === 'music') {
+                    window.location.href = '/music.html';
+                    return;
+                  }
+
                   setCurrentPage(item.id);
                   setMobileMenuOpen(false);
                 }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-semibold transition-all text-left ${
+                className={`w-full nav-button flex items-center gap-3 rounded-lg font-semibold transition-all text-left ${
                   currentPage === item.id
                     ? 'bg-blue-500 text-white'
                     : 'text-gray-200 hover:bg-slate-700'
                 }`}
               >
-                {IconComponent ? <IconComponent size={20} /> : item.icon}
+                {IconComponent ? <IconComponent className="nav-icon" /> : <span className="nav-icon inline-flex items-center justify-center">{item.icon}</span>}
                 {item.label}
               </button>
             );

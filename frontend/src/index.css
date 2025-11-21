@@ -53,3 +53,35 @@ body {
     @apply text-base md:text-lg;
   }
 }
+
+/* Navigation & icon responsiveness */
+.nav-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-block;
+}
+@media (min-width: 640px) {
+  .nav-icon { width: 22px; height: 22px; }
+}
+@media (min-width: 1024px) {
+  .nav-icon { width: 26px; height: 26px; }
+}
+
+.responsive-icon {
+  width: 22px;
+  height: 22px;
+}
+@media (min-width: 1024px) {
+  .responsive-icon { width: 28px; height: 28px; }
+}
+
+.nav-button {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.95rem;
+}
+@media (min-width: 768px) {
+  .nav-button { padding: 0.55rem 1rem; font-size: 1rem; }
+}
+
+/* Ensure icon svgs scale properly when class applied */
+.nav-icon svg, .responsive-icon svg { width: 100%; height: 100%; }

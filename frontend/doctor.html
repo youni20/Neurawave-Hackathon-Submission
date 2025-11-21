@@ -25,6 +25,7 @@
             padding: 40px;
             max-width: 600px;
             width: 100%;
+            position: relative;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
         }
 
@@ -85,10 +86,30 @@
         .message { padding: 8px 12px; border-radius: 6px; margin-bottom: 6px; font-size: 0.85rem; }
         .message.user { background: #eff6ff; color: #1e3a8a; }
         .message.assistant { background: #f8fafc; color: #334155; }
+        /* Back button styles */
+        .back-btn {
+            background: transparent;
+            color: #0f172a;
+            border: 1px solid #e2e8f0;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s, transform 0.08s;
+        }
+        .back-btn:hover { background: #f1f5f9; transform: translateY(-1px); }
+        /* Loading indicator */
+        #loadingIndicator { display: none; position: absolute; left: 50%; top: 70px; transform: translateX(-50%); background: rgba(255,255,255,0.95); padding: 8px 12px; border-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,0.12); align-items: center; gap: 8px; }
+        #loadingIndicator.visible { display: flex; }
+        .loader { width: 18px; height: 18px; border: 3px solid #e2e8f0; border-top-color: #0f172a; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
     <div class="container">
+        <div style="text-align: right; margin-bottom: 10px;">
+            <button id="backButton" class="back-btn" aria-label="Back to Dashboard">← Back to Dashboard</button>
+        </div>
         <div class="character-section">
             <div class="character-display neutral" id="characterDisplay">
                 <div class="character-container" id="characterContainer">
@@ -130,6 +151,7 @@
         </div>
 
         <div class="response-box" id="responseBox"></div>
+        <div id="loadingIndicator" aria-hidden="true"><div class="loader" aria-hidden="true"></div><div style="font-weight:600;color:#0f172a;font-size:0.95rem;">Thinking...</div></div>
         <div class="error" id="errorBox" style="display: none; color: red; text-align: center; margin-bottom:10px;"></div>
 
         <div class="input-section">
@@ -161,6 +183,7 @@
             micBtn: document.getElementById('micButton'),
             responseBox: document.getElementById('responseBox'),
             errorBox: document.getElementById('errorBox'),
+            loading: document.getElementById('loadingIndicator'),
             histSec: document.getElementById('historySection'),
             histCont: document.getElementById('historyContainer')
         };
@@ -219,6 +242,7 @@
             el.sendBtn.textContent = '...';
             el.sendBtn.disabled = true;
             el.input.disabled = true;
+            if (el.loading) el.loading.classList.add('visible');
             
             try {
                 const response = await fetch(API_URL, {
@@ -251,6 +275,7 @@
                 el.errorBox.textContent = "Could not connect to Dr. Neura. Is the python server running?";
                 el.errorBox.style.display = 'block';
             } finally {
+                if (el.loading) el.loading.classList.remove('visible');
                 el.sendBtn.textContent = 'Send';
                 el.sendBtn.disabled = false;
                 el.input.disabled = false;
@@ -272,6 +297,23 @@
         
         // Init
         setupVoice();
+
+        // Back button handler: go to app dashboard (root)
+        const backBtn = document.getElementById('backButton');
+        if (backBtn) {
+            backBtn.addEventListener('click', () => {
+                // Prefer history back when possible, otherwise navigate to root
+                if (window.history.length > 1) {
+                    window.history.back();
+                    // small fallback: if still on doctor.html after a moment, go to '/'
+                    setTimeout(() => {
+                        if (location.pathname.endsWith('/doctor.html')) location.href = '/';
+                    }, 300);
+                } else {
+                    window.location.href = '/';
+                }
+            });
+        }
     </script>
 </body>
 </html>
