@@ -136,9 +136,18 @@ def prepare_target(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
     X = df.drop(columns=['migraine'])
     y = df['migraine']
     
+    # Check for data leakage
+    if 'migraine' in X.columns:
+        raise ValueError("ERROR: Target 'migraine' found in features! Data leakage detected!")
+    
     # Convert boolean to int if needed
     if y.dtype == bool:
         y = y.astype(int)
+    
+    # Validate target has both classes
+    unique_targets = y.unique()
+    if len(unique_targets) < 2:
+        raise ValueError(f"ERROR: Target has only {len(unique_targets)} unique value(s): {unique_targets}. Need at least 2 classes!")
     
     return X, y
 
