@@ -9,6 +9,8 @@ import Navigation from './Navigation';
 import DoctorPage from './DoctorPage';
 import MusicPage from './MusicPage';
 import WeatherPage from './WeatherPage';
+import TriggerTracker from './TriggerTracker';
+import AIInsights from './AIInsights';
 
 // --- CONFIGURATION & UTILS ---
 
@@ -435,7 +437,7 @@ const Dashboard = ({ fullData, onEditSettings }) => {
 export default function App() {
   const [fullData, setFullData] = useState(null);
   const [mode, setMode] = useState('loading'); // onboarding | daily | dashboard
-  const [currentPage, setCurrentPage] = useState('dashboard'); // dashboard | weather | doctor | music
+  const [currentPage, setCurrentPage] = useState('dashboard'); // dashboard | weather | doctor | music | triggers | insights
 
   useEffect(() => {
     const loaded = DataManager.loadData();
@@ -522,6 +524,28 @@ export default function App() {
                 transition={{ duration: 0.3 }}
               >
                 <MusicPage />
+              </motion.div>
+            )}
+            {currentPage === 'triggers' && (
+              <motion.div
+                key="triggers"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <TriggerTracker onDataChange={(data) => setFullData({...fullData, triggerLogs: data.triggerLogs})} />
+              </motion.div>
+            )}
+            {currentPage === 'insights' && (
+              <motion.div
+                key="insights"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <AIInsights />
               </motion.div>
             )}
           </AnimatePresence>

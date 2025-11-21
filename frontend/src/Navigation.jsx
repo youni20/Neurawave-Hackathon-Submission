@@ -1,5 +1,5 @@
 import React from 'react';
-import { Music, Stethoscope, Cloud, Menu, X } from 'lucide-react';
+import { Music, Stethoscope, Cloud, Menu, X, Zap, Brain } from 'lucide-react';
 import { useState } from 'react';
 
 export default function Navigation({ currentPage, setCurrentPage }) {
@@ -8,6 +8,8 @@ export default function Navigation({ currentPage, setCurrentPage }) {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: '🏠' },
     { id: 'weather', label: 'Symptom Triggers', icon: Cloud, component: Cloud },
+    { id: 'triggers', label: 'Track Triggers', icon: Zap, component: Zap },
+    { id: 'insights', label: 'AI Insights', icon: Brain, component: Brain },
     { id: 'doctor', label: 'Dr. Neura', icon: Stethoscope, component: Stethoscope },
     { id: 'music', label: 'Sonic Therapy', icon: Music, component: Music },
   ];

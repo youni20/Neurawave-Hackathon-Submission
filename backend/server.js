@@ -46,6 +46,61 @@ app.post('/save', (req, res) => {
     });
 });
 
+// NEW: Endpoint for saving trigger logs (AI Insights feature)
+app.post('/save-triggers', (req, res) => {
+    // We expect: { name, surname, id, triggerLogs }
+    const { name, surname, id, triggerLogs } = req.body;
+
+    if (!name || !surname || !id) {
+        return res.status(400).json({ error: "Missing identity fields" });
+    }
+
+    // Create a specific file for trigger logs: Name_Surname_ID_triggers.json
+    const safeName = name.replace(/[^a-z0-9]/gi, '');
+    const safeSurname = surname.replace(/[^a-z0-9]/gi, '');
+    const filename = `${safeName}_${safeSurname}_${id}_triggers.json`;
+    const filePath = path.join(DATA_DIR, filename);
+
+    // Write the trigger logs file
+    fs.writeFile(filePath, JSON.stringify(triggerLogs, null, 2), (err) => {
+        if (err) {
+            console.error("Error saving trigger logs:", err);
+            return res.status(500).json({ error: "Failed to save trigger logs" });
+        }
+        console.log(`[Saved] Updated trigger file: ${filename}`);
+        res.json({ success: true, filename, recordCount: triggerLogs.length });
+    });
+});
+
+// NEW: Endpoint for retrieving trigger logs
+app.get('/get-triggers/:name/:surname/:id', (req, res) => {
+    const { name, surname, id } = req.params;
+
+    // Sanitize parameters
+    const safeName = name.replace(/[^a-z0-9]/gi, '');
+    const safeSurname = surname.replace(/[^a-z0-9]/gi, '');
+    const filename = `${safeName}_${safeSurname}_${id}_triggers.json`;
+    const filePath = path.join(DATA_DIR, filename);
+
+    fs.readFile(filePath, 'utf8', (err, data) => {
+        if (err) {
+            if (err.code === 'ENOENT') {
+                return res.json({ triggerLogs: [] });
+            }
+            console.error("Error reading trigger logs:", err);
+            return res.status(500).json({ error: "Failed to read trigger logs" });
+        }
+        
+        try {
+            const triggerLogs = JSON.parse(data);
+            res.json({ triggerLogs });
+        } catch (parseErr) {
+            console.error("Error parsing trigger logs:", parseErr);
+            res.status(500).json({ error: "Invalid trigger logs format" });
+        }
+    });
+});
+
 app.listen(PORT, () => {
     console.log(`Backend running on http://localhost:${PORT}`);
     console.log(`Saving user files to: ${DATA_DIR}`);
