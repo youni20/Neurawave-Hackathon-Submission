@@ -10,7 +10,7 @@ import DoctorPage from './DoctorPage';
 import MusicPage from './MusicPage';
 import WeatherPage from './WeatherPage';
 import TriggerTracker from './TriggerTracker';
-import AIInsights from './AIInsights';
+import Login from './Login';
 
 // --- CONFIGURATION & UTILS ---
 
@@ -153,7 +153,7 @@ const Button = ({ children, onClick, className = "" }) => (
 
 // --- 1. ONBOARDING (The Questionnaire V1) ---
 
-const Onboarding = ({ onComplete }) => {
+const Onboarding = ({ onComplete, onRequestLogin }) => {
   const [step, setStep] = useState(0);
   const [data, setData] = useState({
     name: '', surname: '', dob: '', sex: '',
@@ -250,7 +250,10 @@ const Onboarding = ({ onComplete }) => {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 flex flex-col justify-center max-w-md mx-auto">
+    <div className="min-h-screen bg-slate-50 p-6 flex flex-col justify-center max-w-md mx-auto relative">
+      <div className="absolute top-4 right-4">
+        <button onClick={() => onRequestLogin && onRequestLogin()} className="text-sm text-slate-500 underline">Have an account? Log in</button>
+      </div>
       <AnimatePresence mode="wait">
         <motion.div key={step} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
           {steps[step]}
@@ -342,7 +345,17 @@ const Dashboard = ({ fullData, onEditSettings }) => {
             <h1 className="font-bold text-lg text-slate-800">{fullData.user.name} {fullData.user.surname}</h1>
             <p className="text-xs text-slate-400">ID: {fullData.user.id}</p>
           </div>
-          <button onClick={onEditSettings} className="p-2 bg-slate-100 rounded-full"><Settings size={20} className="text-slate-600"/></button>
+          <div className="flex gap-2">
+            <button onClick={onEditSettings} className="p-2 bg-slate-100 rounded-full"><Settings size={20} className="text-slate-600"/></button>
+            <button onClick={() => {
+              // logout: clear local data and go to login
+              localStorage.removeItem('neuraflow_full_data');
+              localStorage.removeItem('triggerLogs');
+              localStorage.removeItem('aiStatusMap');
+              setFullData(null);
+              setMode('login');
+            }} className="p-2 bg-red-100 text-red-600 rounded-full font-semibold">Logout</button>
+          </div>
         </div>
       </div>
 
@@ -475,11 +488,25 @@ export default function App() {
 
   return (
     <div className="font-sans text-slate-900 bg-gradient-to-br from-slate-900 to-slate-800 min-h-screen">
-      {mode === 'onboarding' && <Onboarding onComplete={handleOnboardingFinish} />}
+      {mode === 'onboarding' && <Onboarding onComplete={handleOnboardingFinish} onRequestLogin={() => setMode('login')} />}
+      {mode === 'login' && (
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 py-6 px-4 flex items-center justify-center">
+          <Login onLogin={(fullData) => {
+            // receive fullData from backend and boot into app
+            // Ensure we have a logs object so the app behaves consistently
+            const fd = { ...(fullData || {}), logs: (fullData && fullData.logs) ? fullData.logs : {} };
+            setFullData(fd);
+            // persist locally as well
+            DataManager.saveData(fd);
+            // after login, show dashboard
+            setMode('dashboard');
+          }} onCancel={() => setMode('onboarding')} />
+        </div>
+      )}
       {mode === 'daily' && <DailyCheckIn onComplete={handleDailyFinish} />}
       {mode === 'dashboard' && (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 py-6 px-4">
-          <Navigation currentPage={currentPage} setCurrentPage={setCurrentPage} />
+          <Navigation currentPage={currentPage} setCurrentPage={setCurrentPage} setMode={setMode} />
           
           <AnimatePresence mode="wait">
             {currentPage === 'dashboard' && (
@@ -534,7 +561,7 @@ export default function App() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.3 }}
               >
-                <TriggerTracker onDataChange={(data) => setFullData({...fullData, triggerLogs: data.triggerLogs})} />
+                <TriggerTracker user={fullData?.user} onDataChange={(data) => setFullData({...fullData, triggerLogs: data.triggerLogs})} />
               </motion.div>
             )}
             {currentPage === 'insights' && (
@@ -545,7 +572,6 @@ export default function App() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.3 }}
               >
-                <AIInsights />
               </motion.div>
             )}
           </AnimatePresence>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, TrendingUp, AlertCircle, Calendar } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, AlertCircle, Calendar, Brain } from 'lucide-react';
 
 const SYMPTOM_OPTIONS = [
   { id: 'migraine', label: 'Migraine', icon: '🧠' },
@@ -25,7 +25,7 @@ const TRIGGER_OPTIONS = [
   { id: 'screen_time', label: 'Screen Time', icon: '💻' },
 ];
 
-export default function TriggerTracker({ onDataChange }) {
+export default function TriggerTracker({ onDataChange, user }) {
   const [triggerLogs, setTriggerLogs] = useState([]);
   const [selectedSymptoms, setSelectedSymptoms] = useState([]);
   const [selectedTriggers, setSelectedTriggers] = useState([]);
@@ -33,13 +33,39 @@ export default function TriggerTracker({ onDataChange }) {
   const [notes, setNotes] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [triggerStats, setTriggerStats] = useState({});
+  const [aiStatusMap, setAiStatusMap] = useState(() => JSON.parse(localStorage.getItem('aiStatusMap') || '{}'));
 
-  // Load existing logs from localStorage
+  // Load existing logs from backend (if user provided) or from localStorage as fallback
   useEffect(() => {
-    const savedLogs = JSON.parse(localStorage.getItem('triggerLogs')) || [];
-    setTriggerLogs(savedLogs);
-    calculateStats(savedLogs);
-  }, []);
+    const load = async () => {
+      if (user && user.name && user.surname && user.id) {
+        try {
+          const resp = await fetch(`http://localhost:3001/get-triggers/${encodeURIComponent(user.name)}/${encodeURIComponent(user.surname)}/${encodeURIComponent(user.id)}`, {
+            headers: { 'X-User-Id': user.id }
+          });
+          if (resp.ok) {
+            const json = await resp.json();
+            const logs = json.triggerLogs || [];
+            setTriggerLogs(logs.reverse ? logs.reverse() : logs);
+            calculateStats(logs);
+            // keep localStorage in sync for offline UX
+            localStorage.setItem('triggerLogs', JSON.stringify(logs));
+            return;
+          }
+        } catch (e) {
+          console.warn('Failed to load triggers from server, falling back to localStorage', e);
+        }
+      }
+
+      const savedLogs = JSON.parse(localStorage.getItem('triggerLogs')) || [];
+      setTriggerLogs(savedLogs);
+      calculateStats(savedLogs);
+      // initialize ai status map for existing logs
+      const savedAi = JSON.parse(localStorage.getItem('aiStatusMap') || '{}');
+      setAiStatusMap(savedAi);
+    };
+    load();
+  }, [user]);
 
   const calculateStats = (logs) => {
     const stats = {};
@@ -82,12 +108,85 @@ export default function TriggerTracker({ onDataChange }) {
       notes,
     };
 
+    // Optimistically update UI
     const updatedLogs = [newLog, ...triggerLogs];
     setTriggerLogs(updatedLogs);
-    localStorage.setItem('triggerLogs', JSON.stringify(updatedLogs));
-    
-    // Notify parent component
+    calculateStats(updatedLogs);
     onDataChange && onDataChange({ triggerLogs: updatedLogs });
+
+    // Persist to backend if user present, otherwise save to localStorage
+    if (user && user.name && user.surname && user.id) {
+      (async () => {
+        try {
+          // mark as pending for AI send
+          setAiStatusMap(prev => {
+            const next = { ...prev, [newLog.id]: 'pending' };
+            localStorage.setItem('aiStatusMap', JSON.stringify(next));
+            return next;
+          });
+          const resp = await fetch('http://localhost:3001/save-triggers', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-User-Id': user.id
+            },
+            body: JSON.stringify({ name: user.name, surname: user.surname, id: user.id, triggerLogs: newLog })
+          });
+          if (resp.ok) {
+            const json = await resp.json();
+            // If server returns the full storage, use it to update UI
+            if (json && json.storage && Array.isArray(json.storage.logs)) {
+              setTriggerLogs(json.storage.logs.slice().reverse());
+              calculateStats(json.storage.logs);
+              localStorage.setItem('triggerLogs', JSON.stringify(json.storage.logs));
+            } else {
+              // fallback: append locally
+              const fallback = [newLog, ...triggerLogs];
+              localStorage.setItem('triggerLogs', JSON.stringify(fallback));
+            }
+          } else {
+            console.warn('Server responded with non-OK status saving trigger');
+            localStorage.setItem('triggerLogs', JSON.stringify(updatedLogs));
+          }
+        } catch (e) {
+          console.warn('Failed to save trigger to server, saved locally', e);
+          localStorage.setItem('triggerLogs', JSON.stringify(updatedLogs));
+        }
+
+        // Attempt to send the log to the user's LLM endpoint (non-blocking)
+        (async () => {
+          try {
+            const llmResp = await fetch('http://100.89.109.97:5000/', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newLog),
+            });
+            if (llmResp.ok) {
+              setAiStatusMap(prev => {
+                const next = { ...prev, [newLog.id]: 'sent' };
+                localStorage.setItem('aiStatusMap', JSON.stringify(next));
+                return next;
+              });
+            } else {
+              setAiStatusMap(prev => {
+                const next = { ...prev, [newLog.id]: 'failed' };
+                localStorage.setItem('aiStatusMap', JSON.stringify(next));
+                return next;
+              });
+            }
+          } catch (err) {
+            setAiStatusMap(prev => {
+              const next = { ...prev, [newLog.id]: 'failed' };
+              localStorage.setItem('aiStatusMap', JSON.stringify(next));
+              return next;
+            });
+            console.warn('Failed to send log to LLM endpoint', err);
+          }
+        })();
+      })();
+    } else {
+      localStorage.setItem('triggerLogs', JSON.stringify(updatedLogs));
+    }
 
     // Reset form
     setSelectedSymptoms([]);
@@ -101,9 +200,18 @@ export default function TriggerTracker({ onDataChange }) {
   const handleDelete = (id) => {
     const updatedLogs = triggerLogs.filter(log => log.id !== id);
     setTriggerLogs(updatedLogs);
-    localStorage.setItem('triggerLogs', JSON.stringify(updatedLogs));
-    onDataChange && onDataChange({ triggerLogs: updatedLogs });
     calculateStats(updatedLogs);
+    onDataChange && onDataChange({ triggerLogs: updatedLogs });
+
+    // Persist deletion to localStorage for now. Server-side deletion not implemented.
+    localStorage.setItem('triggerLogs', JSON.stringify(updatedLogs));
+    // remove any saved ai status
+    setAiStatusMap(prev => {
+      const next = { ...prev };
+      delete next[id];
+      localStorage.setItem('aiStatusMap', JSON.stringify(next));
+      return next;
+    });
   };
 
   const getMostCommonTriggers = () => {
@@ -250,7 +358,16 @@ export default function TriggerTracker({ onDataChange }) {
             <div key={log.id} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
               <div className="flex justify-between items-start mb-3">
                 <div>
-                  <p className="text-slate-400 text-sm">{formatDate(log.date)}</p>
+                      <p className="text-slate-400 text-sm flex items-center">
+                        {formatDate(log.date)}
+                        <span className="ml-2">
+                          <Brain size={14} className={
+                            aiStatusMap[log.id] === 'pending' ? 'text-yellow-400' :
+                            aiStatusMap[log.id] === 'sent' ? 'text-green-400' :
+                            aiStatusMap[log.id] === 'failed' ? 'text-red-400' : 'text-gray-400'
+                          } />
+                        </span>
+                      </p>
                   <div className="flex gap-2 flex-wrap mt-2">
                     {log.symptoms.map(symptom => {
                       const sym = SYMPTOM_OPTIONS.find(s => s.id === symptom);
