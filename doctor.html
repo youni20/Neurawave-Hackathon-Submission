@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. Neura - Voice Enabled</title>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .character-section { text-align: center; margin-bottom: 30px; }
+
+        .character-display {
+            width: 280px; height: 320px; margin: 0 auto 20px;
+            border-radius: 20px; display: flex; align-items: center; justify-content: center;
+            padding: 20px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            transition: all 0.5s ease; position: relative; overflow: hidden;
+        }
+
+        /* --- Character Display Background --- */
+        .character-display { background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%); }
+
+        /* --- Animations --- */
+        @keyframes idle-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+        .character-container { animation: idle-bounce 3s ease-in-out infinite; width: 100%; height: 100%; }
+
+        @keyframes blink { 0%, 90%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
+        .eye-group { animation: blink 4s infinite; transform-box: fill-box; transform-origin: 50% 50%; }
+
+        h1 { font-size: 2rem; color: #0f172a; margin-bottom: 5px; font-weight: 700; }
+
+        .response-box {
+            background: #f1f5f9; border-radius: 12px; padding: 20px; margin-bottom: 20px;
+            color: #0f172a; line-height: 1.6; display: none;
+        }
+        .response-box.visible { display: block; animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .input-section { display: flex; gap: 10px; margin-bottom: 20px; position: relative; }
+
+        input {
+            flex: 1; padding: 12px 16px; border: 2px solid #e2e8f0; border-radius: 8px;
+            font-size: 1rem; outline: none; transition: border 0.3s ease;
+        }
+        input:focus { border-color: #3b82f6; }
+
+        button {
+            padding: 12px 24px; background: #0f172a; color: white; border: none;
+            border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease;
+        }
+        button:hover:not(:disabled) { background: #1e293b; transform: translateY(-2px); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* --- Mic Button Styling --- */
+        #micButton {
+            background: #f1f5f9; color: #64748b; padding: 12px; display: flex; align-items: center; justify-content: center;
+        }
+        #micButton:hover { background: #e2e8f0; color: #0f172a; }
+        #micButton.listening {
+            background: #fee2e2; color: #ef4444; animation: pulse 1.5s infinite; border: 1px solid #fecaca;
+        }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+
+        .history-section { max-height: 200px; overflow-y: auto; margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 15px; }
+        .message { padding: 8px 12px; border-radius: 6px; margin-bottom: 6px; font-size: 0.85rem; }
+        .message.user { background: #eff6ff; color: #1e3a8a; }
+        .message.assistant { background: #f8fafc; color: #334155; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="character-section">
+            <div class="character-display neutral" id="characterDisplay">
+                <div class="character-container" id="characterContainer">
+                    <svg viewBox="0 0 100 140" style="width: 100%; height: 100%;">
+                        <path d="M 35 70 L 30 110 L 40 135 L 60 135 L 70 110 L 65 70 Z" fill="white" stroke="#e2e8f0" stroke-width="1.5"/>
+                        <path d="M 35 75 Q 20 85 18 100" stroke="white" stroke-width="6" fill="none" stroke-linecap="round"/>
+                        <circle cx="18" cy="100" r="4" fill="#fbbf24" class="skin-color"/>
+                        <path d="M 65 75 Q 80 85 82 100" stroke="white" stroke-width="6" fill="none" stroke-linecap="round"/>
+                        <circle cx="82" cy="100" r="4" fill="#fbbf24" class="skin-color"/>
+                        <rect x="45" y="60" width="10" height="10" fill="#fbbf24" rx="2" class="skin-color"/>
+                        
+                        <circle id="head" cx="50" cy="45" r="20" fill="#fbbf24" class="skin-color" style="transition: fill 0.5s ease;"/>
+                        
+                        <path d="M 32 35 Q 30 25 35 20 Q 40 18 45 20 Q 50 15 55 20 Q 60 18 65 20 Q 70 25 68 35" fill="#1e293b" stroke="#1e293b"/>
+                        <ellipse cx="30" cy="45" rx="3" ry="5" fill="#f59e0b"/>
+                        <ellipse cx="70" cy="45" rx="3" ry="5" fill="#f59e0b"/>
+                        
+                        <g class="eye-group">
+                            <ellipse cx="42" cy="43" rx="3" ry="4" fill="white"/>
+                            <ellipse cx="58" cy="43" rx="3" ry="4" fill="white"/>
+                            <circle cx="42" cy="44" r="2" fill="#1e293b"/>
+                            <circle cx="58" cy="44" r="2" fill="#1e293b"/>
+                            <circle cx="42.5" cy="43" r="0.8" fill="white"/>
+                            <circle cx="58.5" cy="43" r="0.8" fill="white"/>
+                        </g>
+                        
+                        <path id="leftBrow" d="M 37 38 Q 42 36 47 38" stroke="#1e293b" stroke-width="1.5" fill="none" stroke-linecap="round" style="transition: d 0.5s ease;"/>
+                        <path id="rightBrow" d="M 53 38 Q 58 36 63 38" stroke="#1e293b" stroke-width="1.5" fill="none" stroke-linecap="round" style="transition: d 0.5s ease;"/>
+                        
+                        <path id="mouth" d="M 42 54 Q 50 60 58 54" stroke="#1e293b" stroke-width="1.5" fill="none" stroke-linecap="round" style="transition: d 0.5s ease;"/>
+                        
+                        <path d="M 45 70 Q 40 78 40 85 M 55 70 Q 60 78 60 85" stroke="#4f46e5" stroke-width="2" fill="none"/>
+                        <circle cx="50" cy="88" r="4" fill="#4f46e5" stroke="#1e40af"/>
+                        <path d="M 40 85 Q 50 90 60 85" stroke="#4f46e5" stroke-width="2" fill="none"/>
+                    </svg>
+                </div>
+            </div>
+            <h1>Dr. Neura</h1>
+        </div>
+
+        <div class="response-box" id="responseBox"></div>
+        <div class="error" id="errorBox" style="display: none; color: red; text-align: center; margin-bottom:10px;"></div>
+
+        <div class="input-section">
+            <button id="micButton" title="Speak">
+                <i data-lucide="mic"></i>
+            </button>
+            
+            <input type="text" id="messageInput" placeholder="Type or click the mic..." autocomplete="off" />
+            <button id="sendButton">Send</button>
+        </div>
+
+        <div class="history-section" id="historySection" style="display: none;">
+            <div id="historyContainer"></div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Icons
+        lucide.createIcons();
+
+        // --- CONFIGURATION ---
+        const API_URL = 'http://100.89.109.97:5000/chat'; // Your Ubuntu Tailscale IP
+        let chatHistory = [];
+
+        // DOM Elements
+        const el = {
+            input: document.getElementById('messageInput'),
+            sendBtn: document.getElementById('sendButton'),
+            micBtn: document.getElementById('micButton'),
+            responseBox: document.getElementById('responseBox'),
+            errorBox: document.getElementById('errorBox'),
+            histSec: document.getElementById('historySection'),
+            histCont: document.getElementById('historyContainer')
+        };
+
+
+        function setupVoice() {
+            if (!('webkitSpeechRecognition' in window)) {
+                el.micBtn.style.display = 'none'; // Hide if browser doesn't support
+                return;
+            }
+
+            const recognition = new webkitSpeechRecognition();
+            recognition.continuous = false;
+            recognition.lang = 'en-US';
+
+            el.micBtn.addEventListener('click', () => {
+                recognition.start();
+                el.micBtn.classList.add('listening');
+                el.input.placeholder = "Listening...";
+            });
+
+            recognition.onresult = (event) => {
+                const text = event.results[0][0].transcript;
+                el.input.value = text;
+                el.micBtn.classList.remove('listening');
+                el.input.placeholder = "Type a message...";
+                sendMessage(); // Auto-send
+            };
+
+            recognition.onerror = () => {
+                el.micBtn.classList.remove('listening');
+                el.input.placeholder = "Error. Try again.";
+            };
+            
+            recognition.onend = () => {
+                el.micBtn.classList.remove('listening');
+            };
+        }
+
+        // --- TTS LOGIC (Text-to-Speech) ---
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel(); // Stop previous
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.pitch = 1.1; // Slightly higher pitch for character
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        // --- CHAT LOGIC ---
+        async function sendMessage() {
+            const msg = el.input.value.trim();
+            if (!msg) return;
+
+            // UI Loading State
+            el.sendBtn.textContent = '...';
+            el.sendBtn.disabled = true;
+            el.input.disabled = true;
+            
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: msg, history: chatHistory })
+                });
+
+                if (!response.ok) throw new Error('Server error');
+
+                const data = await response.json();
+
+                // Show Text
+                el.responseBox.textContent = data.text;
+                el.responseBox.classList.add('visible');
+                
+                // Update History
+                chatHistory = data.history;
+                renderHistory();
+
+                // Speak
+                speak(data.text);
+                
+                // Reset UI
+                el.input.value = '';
+                el.errorBox.style.display = 'none';
+
+            } catch (err) {
+                console.error(err);
+                el.errorBox.textContent = "Could not connect to Dr. Neura. Is the python server running?";
+                el.errorBox.style.display = 'block';
+            } finally {
+                el.sendBtn.textContent = 'Send';
+                el.sendBtn.disabled = false;
+                el.input.disabled = false;
+                el.input.focus();
+            }
+        }
+
+        function renderHistory() {
+            el.histSec.style.display = 'block';
+            el.histCont.innerHTML = chatHistory.map(m => 
+                `<div class="message ${m.role}"><strong>${m.role === 'user' ? 'You' : 'Dr. Neura'}:</strong> ${m.content}</div>`
+            ).join('');
+            el.histSec.scrollTop = el.histSec.scrollHeight;
+        }
+
+        // Events
+        el.sendBtn.addEventListener('click', sendMessage);
+        el.input.addEventListener('keypress', (e) => e.key === 'Enter' && sendMessage());
+        
+        // Init
+        setupVoice();
+    </script>
+</body>
+</html>

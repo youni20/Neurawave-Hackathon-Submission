@@ -4,3 +4,4 @@ cleaned_data/
 .venv/
 __pycache__/
 *.csv
+node_modules
