@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, TrendingUp, AlertCircle, Calendar, Brain, X, Loader, Sun } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, AlertCircle, Calendar, Brain, X, Loader, Sun, Heart } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // --- CONSTANTS ---
@@ -127,18 +127,19 @@ export default function TriggerTracker({ onDataChange, user }) {
 
   // Sensor State
   const [lightLevel, setLightLevel] = useState(0);
+  const [heartBPM, setHeartBPM] = useState(0); // New HR State
   const [sensorStatus, setSensorStatus] = useState('Disconnected');
 
-  // 1. Poll for Light Sensor Data (From Node Backend)
+  // 1. Poll for Light & Heart Sensor Data
   useEffect(() => {
     const fetchSensor = async () => {
       try {
-        const res = await fetch(`${DATA_API_URL}/sensor/light`);
+        const res = await fetch(`${DATA_API_URL}/sensor/live`);
         const data = await res.json();
         setLightLevel(data.percent);
+        setHeartBPM(data.heartBPM || 0);
         setSensorStatus(data.status);
       } catch (e) {
-        // console.warn("Sensor fetch failed", e);
         setSensorStatus('Disconnected');
       }
     };
@@ -192,7 +193,6 @@ export default function TriggerTracker({ onDataChange, user }) {
     setAiResult(null);
 
     try {
-      // Note: Using AI_API_URL here
       const response = await fetch(`${AI_API_URL}/analyze_log`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -225,18 +225,19 @@ export default function TriggerTracker({ onDataChange, user }) {
       return;
     }
 
-    // If light is high during logging, suggest adding "Light Sensitivity" or "Weather"
     const autoTriggers = [...selectedTriggers];
-    // Example: If light sensor is > 80%, automatically assume light is a factor if not selected
-    // if (lightLevel > 80 && !autoTriggers.includes('weather')) autoTriggers.push('weather'); 
+    
+    // Auto-append sensor data to notes so Dr. Neura sees it
+    const sensorNote = ` (Env: ${lightLevel}% Light, ${heartBPM} BPM)`;
+    const finalNotes = notes + sensorNote;
 
     const newLog = {
       id: Date.now(),
       date: new Date().toISOString(),
       symptoms: selectedSymptoms,
-      triggers: autoTriggers, // Use the modified triggers
+      triggers: autoTriggers, 
       severity,
-      notes: `${notes} (Env Light: ${lightLevel}%)`, // Auto-append light data to notes
+      notes: finalNotes, 
     };
 
     const updatedLogs = [newLog, ...triggerLogs];
@@ -292,37 +293,56 @@ export default function TriggerTracker({ onDataChange, user }) {
       <h1 className="text-3xl md:text-4xl font-bold text-center mb-2 text-slate-100">Trigger Tracker</h1>
       <p className="text-center text-slate-400 mb-8">Log your symptoms and discover what triggers them</p>
 
-      {/* --- LIGHT SENSOR CARD --- */}
-      <div className={`rounded-xl p-6 mb-8 text-white transition-colors duration-500 border border-white/10 shadow-lg
-        ${sensorStatus === 'Disconnected' ? 'bg-slate-700' : 
-          lightLevel > 60 ? 'bg-gradient-to-r from-red-600 to-orange-600' : 'bg-gradient-to-r from-emerald-600 to-green-500'}
-      `}>
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="bg-white/20 p-3 rounded-full">
-              <Sun size={24} className="text-white" />
-            </div>
-            <div>
-              <p className="text-sm opacity-90 uppercase font-bold tracking-wider">Live Light Sensor</p>
-              {sensorStatus === 'Disconnected' ? (
-                <p className="text-xs text-slate-400">Sensor Offline (Check COM3)</p>
-              ) : (
-                <p className="text-3xl font-bold">{lightLevel}%</p>
-              )}
+      {/* --- LIVE SENSORS GRID --- */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+        
+        {/* 1. Light Sensor Card */}
+        <div className={`rounded-xl p-6 text-white transition-colors duration-500 border border-white/10 shadow-lg
+          ${sensorStatus === 'Disconnected' ? 'bg-slate-700' : 
+            lightLevel > 60 ? 'bg-gradient-to-r from-orange-600 to-red-600' : 'bg-gradient-to-r from-emerald-600 to-teal-600'}
+        `}>
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="bg-white/20 p-3 rounded-full">
+                <Sun size={24} className="text-white" />
+              </div>
+              <div>
+                <p className="text-[10px] opacity-90 uppercase font-bold tracking-wider">Light Level</p>
+                {sensorStatus === 'Disconnected' ? (
+                  <p className="text-xs text-slate-400">Offline</p>
+                ) : (
+                  <p className="text-3xl font-bold">{lightLevel}%</p>
+                )}
+              </div>
             </div>
           </div>
-
-          {sensorStatus !== 'Disconnected' && (
-            <div className="text-right">
-              <p className="text-sm font-bold opacity-80">
-                {lightLevel > 60 ? "HIGH INTENSITY" : "SAFE LEVEL"}
-              </p>
-              <p className="text-xs opacity-60">
-                {lightLevel > 60 ? "Consider dimming lights" : "Environment is optimal"}
-              </p>
-            </div>
-          )}
         </div>
+
+        {/* 2. Heart Rate Sensor Card */}
+        <div className={`rounded-xl p-6 text-white transition-colors duration-500 border border-white/10 shadow-lg
+          ${sensorStatus === 'Disconnected' ? 'bg-slate-700' : 
+            heartBPM > 100 ? 'bg-gradient-to-r from-pink-600 to-rose-600' : 'bg-gradient-to-r from-blue-600 to-indigo-600'}
+        `}>
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="bg-white/20 p-3 rounded-full animate-pulse">
+                <Heart size={24} className="text-white fill-white" />
+              </div>
+              <div>
+                <p className="text-[10px] opacity-90 uppercase font-bold tracking-wider">Heart Rate</p>
+                {sensorStatus === 'Disconnected' ? (
+                  <p className="text-xs text-slate-400">Offline</p>
+                ) : (
+                  <p className="text-3xl font-bold">{heartBPM} <span className="text-sm font-normal opacity-70">BPM</span></p>
+                )}
+              </div>
+            </div>
+            {sensorStatus !== 'Disconnected' && heartBPM > 100 && (
+               <span className="text-xs bg-white/20 px-2 py-1 rounded font-bold">ELEVATED</span>
+            )}
+          </div>
+        </div>
+
       </div>
 
       {/* Stats Overview */}
@@ -414,6 +434,9 @@ export default function TriggerTracker({ onDataChange, user }) {
           <div className="mb-6">
             <label className="text-slate-100 font-semibold block mb-3">Additional Notes</label>
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Details..." className="w-full bg-slate-700 text-slate-100 rounded-lg p-4 border border-slate-600 focus:border-cyan-500 outline-none" rows="3" />
+            <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">
+                <Heart size={12} /> Auto-including: Light {lightLevel}%, HR {heartBPM} bpm
+            </p>
           </div>
 
           <button onClick={handleSubmit} className="w-full bg-gradient-to-r from-green-500 to-emerald-500 text-white font-bold py-3 rounded-xl hover:shadow-lg transition">

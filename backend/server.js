@@ -4,7 +4,7 @@ import bodyParser from 'body-parser';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-// --- NEW IMPORTS FOR SENSOR ---
+// --- SERIAL PORT IMPORTS ---
 import { SerialPort } from 'serialport';
 import { ReadlineParser } from '@serialport/parser-readline';
 
@@ -12,13 +12,14 @@ const app = express();
 const PORT = 3001;
 
 // --- CONFIGURATION ---
-const SENSOR_PORT = 'COM3'; // Check your device manager if this changes
+const SENSOR_PORT = 'COM3'; // Check device manager!
 const BAUD_RATE = 9600;
 
 // --- GLOBAL SENSOR STATE ---
 let sensorData = {
     raw: 0,
     percent: 0,
+    heartBPM: 0, // NEW FIELD
     status: "Disconnected"
 };
 
@@ -51,7 +52,7 @@ function connectToSensor() {
     });
 
     port.on('open', () => {
-        console.log(`[Serial] Connected to Light Sensor on ${SENSOR_PORT}`);
+        console.log(`[Serial] Connected to Sensor Hub on ${SENSOR_PORT}`);
         sensorData.status = "Connected";
     });
 
@@ -68,16 +69,22 @@ function connectToSensor() {
 
     // Read the data stream
     parser.on('data', (line) => {
-        // Expected format: "Raw: 432   Light %: 86.5%"
-        // We use Regex to pluck out the number after "Light %:"
-        const match = line.match(/Light %:\s*([\d.]+)/);
-        if (match) {
-            // Update the global variable instantly
-            sensorData.percent = parseFloat(match[1]);
-            
-            // Optional: Log rarely to avoid console spam
-            // console.log(`[Sensor] Light Level: ${sensorData.percent}%`);
+        // Format: "Light Raw: 416  Light %: 87.7%  Heart BPM: 96.0"
+        
+        // 1. Parse Light %
+        const lightMatch = line.match(/Light %:\s*([\d.]+)/);
+        if (lightMatch) {
+            sensorData.percent = parseFloat(lightMatch[1]);
         }
+
+        // 2. Parse Heart BPM
+        const heartMatch = line.match(/Heart BPM:\s*([\d.]+)/);
+        if (heartMatch) {
+            sensorData.heartBPM = parseFloat(heartMatch[1]);
+        }
+
+        // Optional logging (uncomment to debug)
+        // console.log(`[Sensors] Light: ${sensorData.percent}%, Heart: ${sensorData.heartBPM} BPM`);
     });
 }
 
@@ -86,7 +93,12 @@ connectToSensor();
 
 // --- ROUTES ---
 
-// NEW: Endpoint for the frontend to get sensor data
+// NEW: Endpoint for the frontend to get ALL sensor data
+app.get('/sensor/live', (req, res) => {
+    res.json(sensorData);
+});
+
+// Keep this for backward compatibility if needed
 app.get('/sensor/light', (req, res) => {
     res.json(sensorData);
 });
@@ -215,7 +227,6 @@ app.post('/login', (req, res) => {
                         const surname = (parsed.user.surname || '').toString().toLowerCase();
                         const combined = `${name} ${surname}`.trim();
                         if (name === search || surname === search || combined === search || combined.includes(search)) {
-                            // Load triggers logic (simplified for brevity - same as your original)
                             const safeName = (parsed.user.name || '').toString().replace(/[^a-z0-9]/gi, '');
                             const safeSurname = (parsed.user.surname || '').toString().replace(/[^a-z0-9]/gi, '');
                             const triggerPath = path.join(DATA_DIR, `${safeName}_${safeSurname}_${parsed.user.id}_triggers.json`);
@@ -243,5 +254,5 @@ app.post('/login', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Backend running on http://localhost:${PORT}`);
     console.log(`Saving user files to: ${DATA_DIR}`);
-    console.log(`Monitoring Light Sensor on: ${SENSOR_PORT}`);
+    console.log(`Monitoring Sensors on: ${SENSOR_PORT}`);
 });
