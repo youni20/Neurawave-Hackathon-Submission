@@ -25,7 +25,7 @@ const TRIGGER_OPTIONS = [
   { id: 'screen_time', label: 'Screen Time', icon: '💻' },
 ];
 
-export default function TriggerTracker({ onDataChange, user }) {
+export default function TriggerTracker({ onDataChange, user, onSendToLLM }) {
   const [triggerLogs, setTriggerLogs] = useState([]);
   const [selectedSymptoms, setSelectedSymptoms] = useState([]);
   const [selectedTriggers, setSelectedTriggers] = useState([]);
@@ -379,12 +379,58 @@ export default function TriggerTracker({ onDataChange, user }) {
                     })}
                   </div>
                 </div>
-                <button
-                  onClick={() => handleDelete(log.id)}
-                  className="text-red-400 hover:text-red-300 transition"
-                >
-                  <Trash2 size={20} />
-                </button>
+                <div className="flex flex-col items-end gap-2">
+                  <button
+                    onClick={() => handleDelete(log.id)}
+                    className="text-red-400 hover:text-red-300 transition"
+                    aria-label="Delete entry"
+                  >
+                    <Trash2 size={20} />
+                  </button>
+                  <button
+                    onClick={async () => {
+                      // mark pending in UI
+                      setAiStatusMap(prev => {
+                        const next = { ...prev, [log.id]: 'pending' };
+                        localStorage.setItem('aiStatusMap', JSON.stringify(next));
+                        return next;
+                      });
+
+                      if (typeof onSendToLLM === 'function') {
+                        try {
+                          await onSendToLLM(log);
+                          setAiStatusMap(prev => {
+                            const next = { ...prev, [log.id]: 'sent' };
+                            localStorage.setItem('aiStatusMap', JSON.stringify(next));
+                            return next;
+                          });
+                        } catch (err) {
+                          setAiStatusMap(prev => {
+                            const next = { ...prev, [log.id]: 'failed' };
+                            localStorage.setItem('aiStatusMap', JSON.stringify(next));
+                            return next;
+                          });
+                        }
+                      } else {
+                        // No handler provided — user will implement; keep UX non-blocking and log intent
+                        console.log('AI push requested for log', log);
+                        // Provide brief visual feedback then revert to 'failed' so user can act
+                        setTimeout(() => {
+                          setAiStatusMap(prev => {
+                            const next = { ...prev, [log.id]: 'failed' };
+                            localStorage.setItem('aiStatusMap', JSON.stringify(next));
+                            return next;
+                          });
+                        }, 800);
+                      }
+                    }}
+                    className="text-gray-400 hover:text-gray-300 transition"
+                    aria-label="Send to AI"
+                    title="Send this entry to your LLM"
+                  >
+                    <Brain size={20} />
+                  </button>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

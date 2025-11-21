@@ -2,7 +2,7 @@ import React from 'react';
 import { Music, Stethoscope, Cloud, Menu, X, Zap, Brain } from 'lucide-react';
 import { useState } from 'react';
 
-export default function Navigation({ currentPage, setCurrentPage, setMode }) {
+export default function Navigation({ currentPage, setCurrentPage, setMode, onAIClick }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navItems = [
@@ -28,6 +28,31 @@ export default function Navigation({ currentPage, setCurrentPage, setMode }) {
       <nav className="hidden md:flex gap-4 mb-6 flex-wrap justify-center">
         {navItems.map((item) => {
           const IconComponent = item.component;
+          // For the triggers item we render a wrapper so we can show a small AI button next to it
+          if (item.id === 'triggers') {
+            return (
+              <div key={item.id} className="relative">
+                <button
+                  onClick={() => {
+                    setCurrentPage(item.id);
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`nav-button flex items-center gap-2 rounded-lg font-semibold transition-all ${
+                    currentPage === item.id ? 'bg-blue-500 text-white shadow-lg' : 'bg-slate-700 text-gray-200 hover:bg-slate-600'
+                  }`}
+                >
+                  {IconComponent ? (
+                    <IconComponent className="nav-icon" />
+                  ) : (
+                    <span className="nav-icon inline-flex items-center justify-center">{item.icon}</span>
+                  )}
+                  <span className="hidden sm:inline">{item.label}</span>
+                </button>
+                {/* AI button removed per request */}
+              </div>
+            );
+          }
+
           return (
             <button
               key={item.id}
