@@ -112,6 +112,37 @@ def validate_data(df: pd.DataFrame) -> Dict:
     else:
         print("\n✓ No constant features found")
     
+    # Check for perfect predictors (features that perfectly separate classes)
+    if 'migraine' in df.columns:
+        perfect_predictors = []
+        for col in df.columns:
+            if col != 'migraine' and df[col].dtype in [np.number, 'object']:
+                if df[col].dtype == 'object':
+                    # For categorical, check each value
+                    for val in df[col].unique():
+                        mask = df[col] == val
+                        if mask.sum() > 10:  # Only check if enough samples
+                            target_rate = df.loc[mask, 'migraine'].mean()
+                            if target_rate == 0.0 or target_rate == 1.0:
+                                perfect_predictors.append(f"{col}={val}")
+                                break
+                else:
+                    # For numeric, check if correlation is too high
+                    corr = abs(df[col].corr(df['migraine'].astype(int)))
+                    if corr > 0.95:
+                        perfect_predictors.append(f"{col} (corr={corr:.3f})")
+        
+        if perfect_predictors:
+            print(f"\n⚠ WARNING: Perfect or near-perfect predictors found!")
+            print(f"   These features may cause severe overfitting:")
+            for pred in perfect_predictors[:10]:  # Show first 10
+                print(f"     - {pred}")
+            if len(perfect_predictors) > 10:
+                print(f"     ... and {len(perfect_predictors) - 10} more")
+            print(f"   The model will use noise injection and aggressive regularization to mitigate this.")
+        else:
+            print("\n✓ No perfect predictors found")
+    
     # Basic statistics
     print(f"\nDataset shape: {df.shape[0]:,} rows × {df.shape[1]} columns")
     
