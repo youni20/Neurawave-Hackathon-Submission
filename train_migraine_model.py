@@ -126,10 +126,78 @@ Examples:
         print("\nTop 10 Most Important Features:")
         print(importance_df.head(10).to_string(index=False))
         
+        # Feature importance validation
+        total_importance = importance_df['importance'].sum()
+        if total_importance > 0:
+            top_feature_pct = (importance_df.iloc[0]['importance'] / total_importance) * 100
+            top3_importance = importance_df.head(3)['importance'].sum()
+            top3_pct = (top3_importance / total_importance) * 100
+            num_features_used = (importance_df['importance'] > 0).sum()
+            
+            print(f"\nFeature Importance Analysis:")
+            print(f"  Features with non-zero importance: {num_features_used}/{len(importance_df)}")
+            print(f"  Top feature accounts for: {top_feature_pct:.2f}% of total importance")
+            print(f"  Top 3 features account for: {top3_pct:.2f}% of total importance")
+            
+            if top_feature_pct > 50:
+                print(f"  ⚠ WARNING: Single feature has >50% importance! Model may be overfitting.")
+            if top3_pct > 90:
+                print(f"  ⚠ WARNING: Top 3 features have >90% importance! Model may be overfitting.")
+            if num_features_used < 5:
+                print(f"  ⚠ WARNING: Only {num_features_used} features are being used! Expected: >5 features.")
+            else:
+                print(f"  ✓ Feature usage is healthy ({num_features_used} features with non-zero importance)")
+        
         # 8. Evaluate model
         train_metrics, train_proba = evaluate_model(model, X_train, y_train, "Training")
         val_metrics, val_proba = evaluate_model(model, X_val, y_val, "Validation")
         test_metrics, test_proba = evaluate_model(model, X_test, y_test, "Test")
+        
+        # 8.5. Overfitting detection: Compare train/val/test metrics
+        print("\n" + "=" * 80)
+        print("OVERFITTING DETECTION")
+        print("=" * 80)
+        
+        # Check train/val/test gap
+        train_val_acc_gap = abs(train_metrics['accuracy'] - val_metrics['accuracy'])
+        train_test_acc_gap = abs(train_metrics['accuracy'] - test_metrics['accuracy'])
+        val_test_acc_gap = abs(val_metrics['accuracy'] - test_metrics['accuracy'])
+        
+        print(f"\nAccuracy gaps:")
+        print(f"  Train - Val:   {train_val_acc_gap:.4f} ({train_val_acc_gap*100:.2f}%)")
+        print(f"  Train - Test:  {train_test_acc_gap:.4f} ({train_test_acc_gap*100:.2f}%)")
+        print(f"  Val - Test:    {val_test_acc_gap:.4f} ({val_test_acc_gap*100:.2f}%)")
+        
+        if train_val_acc_gap > 0.05:
+            print(f"  ⚠ WARNING: Large train-val gap ({train_val_acc_gap*100:.2f}%)! Model may be overfitting.")
+        else:
+            print(f"  ✓ Train-val gap is acceptable (<5%)")
+        
+        if train_test_acc_gap > 0.05:
+            print(f"  ⚠ WARNING: Large train-test gap ({train_test_acc_gap*100:.2f}%)! Model may be overfitting.")
+        else:
+            print(f"  ✓ Train-test gap is acceptable (<5%)")
+        
+        # Check ROC-AUC gaps
+        train_val_auc_gap = abs(train_metrics['roc_auc'] - val_metrics['roc_auc'])
+        train_test_auc_gap = abs(train_metrics['roc_auc'] - test_metrics['roc_auc'])
+        
+        print(f"\nROC-AUC gaps:")
+        print(f"  Train - Val:   {train_val_auc_gap:.4f}")
+        print(f"  Train - Test:  {train_test_auc_gap:.4f}")
+        
+        if train_val_auc_gap > 0.05:
+            print(f"  ⚠ WARNING: Large train-val ROC-AUC gap ({train_val_auc_gap:.4f})! Model may be overfitting.")
+        
+        # Check for perfect predictions
+        if train_metrics.get('unique_probabilities', 0) <= 2:
+            print(f"\n  ⚠ WARNING: Training set has only {train_metrics.get('unique_probabilities', 0)} unique probabilities!")
+        if val_metrics.get('unique_probabilities', 0) <= 2:
+            print(f"  ⚠ WARNING: Validation set has only {val_metrics.get('unique_probabilities', 0)} unique probabilities!")
+        if test_metrics.get('unique_probabilities', 0) <= 2:
+            print(f"  ⚠ WARNING: Test set has only {test_metrics.get('unique_probabilities', 0)} unique probabilities!")
+        
+        print("=" * 80)
         
         # 9. Create visualizations
         output_path = Path(args.output)
