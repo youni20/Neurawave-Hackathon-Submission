@@ -49,7 +49,24 @@ def evaluate_model(
     y_pred_proba = model.predict(dtest)
     y_pred = (y_pred_proba >= 0.5).astype(int)
     
-    # Validation checks for suspicious predictions
+    # Convert y to int if needed
+    if y.dtype == bool:
+        y_int = y.astype(int)
+    else:
+        y_int = y
+    
+    # Calculate metrics first
+    metrics = {
+        'roc_auc': roc_auc_score(y_int, y_pred_proba),
+        'log_loss': log_loss(y_int, y_pred_proba),
+        'brier_score': brier_score_loss(y_int, y_pred_proba),
+        'precision': precision_score(y_int, y_pred),
+        'recall': recall_score(y_int, y_pred),
+        'f1_score': f1_score(y_int, y_pred),
+        'accuracy': accuracy_score(y_int, y_pred),
+    }
+    
+    # Validation checks for suspicious predictions (after metrics are calculated)
     unique_proba = len(np.unique(y_pred_proba))
     unique_pred = len(np.unique(y_pred))
     proba_range = y_pred_proba.max() - y_pred_proba.min()
@@ -67,23 +84,6 @@ def evaluate_model(
         print(f"⚠ WARNING: Probability range is very small ({proba_range:.6f})! Model may be overconfident.")
     if metrics['log_loss'] < 0.01:
         print(f"⚠ WARNING: Log loss is extremely low ({metrics['log_loss']:.6f})! Model may be overfitting.")
-    
-    # Convert y to int if needed
-    if y.dtype == bool:
-        y_int = y.astype(int)
-    else:
-        y_int = y
-    
-    # Calculate metrics
-    metrics = {
-        'roc_auc': roc_auc_score(y_int, y_pred_proba),
-        'log_loss': log_loss(y_int, y_pred_proba),
-        'brier_score': brier_score_loss(y_int, y_pred_proba),
-        'precision': precision_score(y_int, y_pred),
-        'recall': recall_score(y_int, y_pred),
-        'f1_score': f1_score(y_int, y_pred),
-        'accuracy': accuracy_score(y_int, y_pred),
-    }
     
     # Confusion matrix
     cm = confusion_matrix(y_int, y_pred)

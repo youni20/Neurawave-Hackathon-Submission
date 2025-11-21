@@ -71,26 +71,28 @@ def optimize_hyperparameters(
             'tree_method': 'hist',
             'random_state': random_state,
             'n_jobs': -1,
-            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.1, log=True),  # Further reduced
-            'max_depth': trial.suggest_int('max_depth', 2, 4),  # Much lower: 2-4 instead of 3-7
-            'min_child_weight': trial.suggest_int('min_child_weight', 5, 20),  # Much higher: 5-20
-            'subsample': trial.suggest_float('subsample', 0.6, 0.85),  # Lower max
-            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 0.85),  # Lower max
-            'reg_alpha': trial.suggest_float('reg_alpha', 5, 30),  # Much higher: 5-30
-            'reg_lambda': trial.suggest_float('reg_lambda', 5, 30),  # Much higher: 5-30
-            'gamma': trial.suggest_float('gamma', 1, 10),  # Higher: 1-10
+            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.05, log=True),  # Even more reduced: 0.05 max
+            'max_depth': trial.suggest_int('max_depth', 2, 3),  # Even lower: 2-3 only
+            'min_child_weight': trial.suggest_int('min_child_weight', 10, 30),  # Much higher: 10-30
+            'subsample': trial.suggest_float('subsample', 0.5, 0.8),  # Lower: 0.5-0.8
+            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 0.8),  # Lower: 0.5-0.8
+            'reg_alpha': trial.suggest_float('reg_alpha', 10, 50),  # Much higher: 10-50
+            'reg_lambda': trial.suggest_float('reg_lambda', 10, 50),  # Much higher: 10-50
+            'gamma': trial.suggest_float('gamma', 2, 15),  # Higher: 2-15
             'scale_pos_weight': scale_pos_weight,
         }
         
         # Add noise to training data to break perfect separability
         X_train_noisy = X_train.copy()
-        noise_scale = 0.01  # Small noise to break perfect predictors
+        noise_scale = 0.05  # Increased from 0.01 to 0.05 for stronger regularization
         # Use trial number to vary noise across trials
         np.random.seed(trial_seed)
         for col in X_train_noisy.columns:
             if X_train_noisy[col].dtype in [np.float64, np.int64]:
-                noise = np.random.normal(0, noise_scale * X_train_noisy[col].std(), size=len(X_train_noisy))
-                X_train_noisy[col] = X_train_noisy[col] + noise
+                col_std = X_train_noisy[col].std()
+                if col_std > 0:
+                    noise = np.random.normal(0, noise_scale * col_std, size=len(X_train_noisy))
+                    X_train_noisy[col] = X_train_noisy[col] + noise
         
         # Create DMatrix for XGBoost with feature names
         dtrain = xgb.DMatrix(X_train_noisy, label=y_train, feature_names=X_train.columns.tolist())
@@ -100,9 +102,9 @@ def optimize_hyperparameters(
         model = xgb.train(
             params,
             dtrain,
-            num_boost_round=200,  # Much reduced: 200 instead of 500
+            num_boost_round=100,  # Much reduced: 100 instead of 200
             evals=[(dtrain, 'train'), (dval, 'val')],
-            early_stopping_rounds=50,  # More aggressive early stopping
+            early_stopping_rounds=20,  # Very aggressive early stopping
             verbose_eval=False
         )
         
@@ -170,12 +172,14 @@ def train_final_model(
     # Add noise to training data to break perfect separability
     print("Adding noise to training data to prevent overfitting...")
     X_train_noisy = X_train.copy()
-    noise_scale = 0.01  # Small noise to break perfect predictors
+    noise_scale = 0.05  # Increased from 0.01 to 0.05 for stronger regularization
     np.random.seed(42)  # For reproducibility
     for col in X_train_noisy.columns:
         if X_train_noisy[col].dtype in [np.float64, np.int64]:
-            noise = np.random.normal(0, noise_scale * X_train_noisy[col].std(), size=len(X_train_noisy))
-            X_train_noisy[col] = X_train_noisy[col] + noise
+            col_std = X_train_noisy[col].std()
+            if col_std > 0:
+                noise = np.random.normal(0, noise_scale * col_std, size=len(X_train_noisy))
+                X_train_noisy[col] = X_train_noisy[col] + noise
     
     # Create DMatrix with feature names
     dtrain = xgb.DMatrix(X_train_noisy, label=y_train, feature_names=X_train.columns.tolist())
@@ -186,10 +190,10 @@ def train_final_model(
     model = xgb.train(
         hyperparameters,
         dtrain,
-        num_boost_round=min(n_estimators, 200),  # Much lower cap: 200 instead of 500
+        num_boost_round=min(n_estimators, 100),  # Much lower cap: 100 instead of 200
         evals=[(dtrain, 'train'), (dval, 'val')],
-        early_stopping_rounds=50,  # More aggressive
-        verbose_eval=50
+        early_stopping_rounds=20,  # Very aggressive early stopping
+        verbose_eval=25
     )
     
     print(f"\nTraining completed!")
